@@ -1,0 +1,238 @@
+/* MPC Synthdrums -- the plugin engine (wrapper/engine.h): parameters, MIDI and audio for one instance.
+ * The voices have no DSP yet: render() is silence (Task 3 adds the drum synthesis). */
+#include <stdarg.h>
+#include <stdint.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include "engine.h"
+#include "synthdrums.h"
+
+static float clampf(float v, float lo, float hi) { return v < lo ? lo : v > hi ? hi : v; }
+
+static void *create(const char *data_dir)
+{
+    Synth *s = calloc(1, sizeof *s);
+    (void)data_dir;
+    if (!s) return NULL;
+    patch_init_kit(s);
+    s->base_note = (int)PDEF[P_BASE_NOTE].def;   /* device-level: a fresh kit starts at C1 (36) */
+    return s;
+}
+
+static void destroy(void *p) { free(p); }
+
+/* A note-on folds into the kit: voice ((note - base_note) mod 12), so every pad bank plays all twelve voices.
+ * Note-off is ignored: a drum voice is a one-shot, not a gate. */
+static void midi(void *p, const uint8_t *m, int len)
+{
+    Synth *s = p;
+    if (len < 3) return;
+    if ((m[0] & 0xF0) == 0x90 && m[2]) {
+        const int idx = ((m[1] - s->base_note) % 12 + 12) % 12;
+        s->v[idx].sounding = 1;   /* Task 3 scales the hit by m[2] */
+    }
+}
+
+static int key_index(const char *k)
+{
+    int i;
+    for (i = 0; i < P_COUNT; i++) if (!strcmp(k, PDEF[i].key)) return i;
+    return -1;
+}
+
+/* ---------------------------------------------------------------- the state: "MSDR 1" + sel/base + twelve voice lines */
+#define STATE_CAP 4096   /* the whole state is under 2.5 KB; the wrapper's chunk buffer holds 8 KB */
+
+static void add(char *buf, size_t cap, size_t *n, const char *fmt, ...)
+{
+    va_list ap;
+    int r;
+    va_start(ap, fmt);
+    r = vsnprintf(buf + *n, cap - *n, fmt, ap);
+    va_end(ap);
+    if (r < 0) return;
+    if ((size_t)r >= cap - *n) { *n = cap - 1; return; }   /* truncated: stay NUL-terminated (cannot happen at this size) */
+    *n += (size_t)r;
+}
+
+static char *serialize(const Synth *s, int *len)
+{
+    char *buf = malloc(STATE_CAP);
+    size_t n = 0;
+    int i, k;
+    if (!buf) return NULL;
+    add(buf, STATE_CAP, &n, "MSDR 1\nsel=%d\nbase=%d\n", s->sel, s->base_note);
+    for (i = 0; i < 12; i++) {
+        add(buf, STATE_CAP, &n, "v%d=", i + 1);   /* 1-based line number, 0-based parameter values */
+        for (k = 0; k < EDIT_PARAMS; k++) add(buf, STATE_CAP, &n, k ? ",%g" : "%g", (double)s->v[i].p[k]);
+        add(buf, STATE_CAP, &n, "\n");
+    }
+    *len = (int)n;
+    return buf;
+}
+
+/* Parse by index, clamp to PDEF's range, tolerate missing/extra lines: a chunk from another version still loads. */
+static void deserialize(Synth *s, const char *text)
+{
+    const char *p = text;
+    if (strncmp(text, "MSDR ", 5)) return;
+    patch_init_kit(s);
+    while ((p = strchr(p, '\n'))) {
+        p++;
+        if (!strncmp(p, "sel=", 4)) {
+            s->sel = (int)clampf((float)atoi(p + 4), (float)PDEF[P_VOICE].min, (float)PDEF[P_VOICE].max);
+            continue;
+        }
+        if (!strncmp(p, "base=", 5)) {
+            s->base_note = (int)clampf((float)atoi(p + 5), PDEF[P_BASE_NOTE].min, PDEF[P_BASE_NOTE].max);
+            continue;
+        }
+        if (p[0] == 'v' && p[1] >= '0' && p[1] <= '9') {
+            const int idx = atoi(p + 1);
+            const char *q = strchr(p, '=');
+            int k;
+            if (idx < 1 || idx > 12 || !q) continue;
+            q++;
+            for (k = 0; k < EDIT_PARAMS; k++) {
+                char *end;
+                const double d = strtod(q, &end);
+                if (end == q) break;   /* short line: the rest stays at the init values */
+                s->v[idx - 1].p[k] = clampf((float)d, PDEF[P_VEL_TO_VOL + k].min, PDEF[P_VEL_TO_VOL + k].max);
+                q = end;
+                if (*q != ',') break;   /* extra values are ignored */
+                q++;
+            }
+        }
+    }
+    s->rev++;   /* a state load changes what the screen shows */
+}
+
+/* Every PK_PATCH parameter edits the selected voice. The selector and base note are device-level; the trigs act. */
+static void set_param(void *p, const char *k, const char *val)
+{
+    Synth *s = p;
+    int i;
+    if (!strcmp(k, "state")) { deserialize(s, val); return; }
+    i = key_index(k);
+    if (i < 0) return;
+    {
+        const ParamDef *d = &PDEF[i];
+        const float f = clampf((float)atof(val), d->min, d->max);
+        switch (d->kind) {
+        case PK_PATCH:
+            s->v[s->sel].p[i - P_VEL_TO_VOL] = f;
+            break;
+        case PK_UI:
+            if (i == P_VOICE) {
+                const int idx = (int)(f + 0.5f);   /* an option's index, 0-based */
+                if (idx != s->sel) { s->sel = idx; s->rev++; }
+            } else if (i == P_BASE_NOTE) {
+                s->base_note = (int)(f + 0.5f);
+            }
+            break;
+        case PK_TRIG:
+            if (i == P_TRIG) {
+                /* no edge memory: the wrapper springs the key back, so every press is a fresh 1 -> 0 */
+                if (f > 0.5f) s->v[s->sel].sounding = 1;
+            } else if (i == P_KIT_INIT) {
+                if (f > 0.5f) { patch_init_kit(s); s->rev++; }
+            }
+            /* voice_prev/voice_next never reach the engine: the wrapper steps "voice" itself (step_of) */
+            break;
+        default: break;   /* PK_SHOW is read-only */
+        }
+    }
+}
+
+static int put(char *buf, int n, const char *s)
+{
+    if (n <= 0) return 0;
+    snprintf(buf, (size_t)n, "%s", s);
+    return (int)strlen(s) > 0 ? (int)strlen(s) : 1;
+}
+
+static int get_param(void *p, const char *k, char *buf, int n)
+{
+    Synth *s = p;
+    char t[64];
+    int i;
+    if (!strcmp(k, "state")) {
+        int len = 0, r = 0;
+        char *str = serialize(s, &len);
+        if (str) {
+            if (len < n) memcpy(buf, str, (size_t)len + 1);
+            r = len + 1;
+            free(str);
+        }
+        return r;
+    }
+    if (!strcmp(k, "display_rev")) {
+        snprintf(t, sizeof t, "%u", s->rev);
+        return put(buf, n, t);
+    }
+    i = key_index(k);
+    if (i < 0) return 0;
+    if (PDEF[i].kind == PK_TRIG) return put(buf, n, "0");   /* a momentary key always reads back released */
+    if (PDEF[i].kind == PK_SHOW) return put(buf, n, VOICE_NAMES[s->sel]);
+    if (i == P_VOICE) {
+        snprintf(t, sizeof t, "%d", s->sel);   /* an option's index, 0-based */
+        return put(buf, n, t);
+    }
+    if (i == P_BASE_NOTE) {
+        snprintf(t, sizeof t, "%g", (float)s->base_note);
+        return put(buf, n, t);
+    }
+    if (PDEF[i].kind == PK_PATCH) {
+        const float v = s->v[s->sel].p[i - P_VEL_TO_VOL];
+        if (PDEF[i].nopts) snprintf(t, sizeof t, "%d", (int)v);
+        else snprintf(t, sizeof t, "%g", v);
+        return put(buf, n, t);
+    }
+    return 0;
+}
+
+/* Denormals: the audio runs with flush-to-zero on, the host's setting put back afterwards */
+#if defined(__arm__)
+static inline unsigned fz_on(void)
+{
+    unsigned old;
+    __asm__ volatile("vmrs %0, fpscr" : "=r"(old));
+    __asm__ volatile("vmsr fpscr, %0" : : "r"(old | (1u << 24)));
+    return old;
+}
+static inline void fz_off(unsigned old) { __asm__ volatile("vmsr fpscr, %0" : : "r"(old)); }
+#elif defined(__aarch64__)
+static inline unsigned fz_on(void)
+{
+    unsigned long old;
+    __asm__ volatile("mrs %0, fpcr" : "=r"(old));
+    __asm__ volatile("msr fpcr, %0" : : "r"(old | (1ul << 24)));
+    return (unsigned)old;
+}
+static inline void fz_off(unsigned old)
+{
+    unsigned long v = old;
+    __asm__ volatile("msr fpcr, %0" : : "r"(v));
+}
+#elif defined(__x86_64__) || defined(__i386__)
+#include <xmmintrin.h>
+static inline unsigned fz_on(void) { const unsigned old = _mm_getcsr(); _mm_setcsr(old | 0x8040u); return old; }
+static inline void fz_off(unsigned old) { _mm_setcsr(old); }
+#else
+static inline unsigned fz_on(void) { return 0; }
+static inline void fz_off(unsigned old) { (void)old; }
+#endif
+
+/* SAMPLE_ACCURATE: any frame count from 1 to 128 (wrapper/engine.h). Silence until Task 3's DSP. */
+static void render(void *p, int16_t *out, int frames)
+{
+    const unsigned fpu = fz_on();
+    (void)p;
+    if (frames > 128) frames = 128;
+    if (frames > 0) memset(out, 0, sizeof(int16_t) * 2 * (size_t)frames);
+    fz_off(fpu);
+}
+
+static const mpc_engine_t ENGINE = {create, destroy, midi, set_param, get_param, render, NULL};
+const mpc_engine_t *mpc_engine(void) { return &ENGINE; }
