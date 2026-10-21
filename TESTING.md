@@ -14,6 +14,8 @@ All commands run from the repo root. Re-run on 2026-10-21 for this file.
 | Host test (framework VST2 host) | `test/host_test.sh` | **PASSED**, exit 0 — 30/30 `ok`; state chunk 1108 B (< 8000 guard is in the unit suite); two-thread screen/audio check included | 2026-10-21 | 6 |
 | Skin check | `python3 third_party/mpc-vst-plugins/tools/skin_check.py "build/skin/Dream Static Sounds - VST - MPC Synthdrums"` | exit 0, **no findings** (no TOUCH/EDGE/QLINK/OPTS); built skin: 5 pages, 72 definitions, 62 pictures | 2026-10-21 | 7 |
 | armhf build gates | `nm -D build/arm/synthdrums.so \| awk '$2=="T"'`; `python3 -c '…catalog_check.max_glibc("build/arm/synthdrums.so")'`; `file build/arm/synthdrums.so`; `find "build/package/Dream Static Sounds - VST - MPC Synthdrums" -maxdepth 1` | **1** exported `T` symbol (`VSTPluginMain`); **max GLIBC = 2.27** (≤ 2.31; numeric check — not the lexicographic `sort -u \| tail -1`, which misleadingly prints `GLIBC_2.4`); ELF 32-bit LSB ARM EABI5, hard-float, stripped; package = `Plugin Skins/` + `Presets/` + `version.xml` + `synthdrums.so` (37 500 B) | 2026-10-21 | 7 |
+| aarch64 build gates | `nm -D build/arm64/synthdrums.so \| awk '$2=="T"'`; `python3 -c '…catalog_check.max_glibc("build/arm64/synthdrums.so")'`; `file build/arm64/synthdrums.so`; `find "build/package-aarch64/Dream Static Sounds - VST - MPC Synthdrums" -maxdepth 1` | **1** exported `T` symbol (`VSTPluginMain`); **max GLIBC = 2.27** (same numeric check); ELF 64-bit LSB shared object, ARM aarch64, stripped; package = `Plugin Skins/` + `Presets/` + `version.xml` + `synthdrums.so` (43 152 B) | 2026-10-21 | 9 |
+| aarch64 engine test under qemu | `test/arm_sim.sh` | **PASSED**, exit 0 — same green suite as x86; static-musl aarch64 build (Zig `-target aarch64-linux-musl`), executed by qemu-aarch64 via binfmt (no ARM hardware involved) | 2026-10-21 | 9 |
 | Param generator check | `python3 tools/gen_params.py --check && python3 tools/skin.py --check` | exit 0, **silent** — 42 parameters (35 edit + voice/base_note + 4 trig keys + voice_name), layout matches `layout.conf` | 2026-10-21 | 1, 7 |
 
 ### Build status by architecture
@@ -21,7 +23,7 @@ All commands run from the repo root. Re-run on 2026-10-21 for this file.
 | Arch | Status |
 |---|---|
 | armv7 (armhf) | **Compiled** by `./build.sh` (Zig, glibc 2.31 target; max required 2.27). Runtime **pending** this task's device step — no armv7 emulator exists on this machine. |
-| aarch64 | **Not built yet** — Task 9 (mm303 build + qemu codegen run). |
+| aarch64 | **Compiled** by `ARCH=aarch64 ./build.sh` (Docker `mm303:aarch64-audio`, native GCC 11.5, glibc 2.31; max required 2.27); engine suite green under qemu (`test/arm_sim.sh`). Runtime **pending** on-device (Gen2: MPC Live/One/X/Key 3). |
 
 Release packaging note: `release.py` reports **MPC OS compatibility: 3.x only** for this build, because the skin's
 `TUI.json` uses actions/Button version 2 (MPC OS 2.15.1 uses version 1). The armhf binary itself needs only
@@ -47,14 +49,18 @@ Note on item 7: `bench.sh` has no `--help` (it reads `<so> <ip>` positionally; `
 
 ## How to run on the device
 
-**1. Install.** The armhf release zip is built offline and is ready to copy:
+**1. Install.** Two release zips are built offline — pick the device's generation (the installer refuses the wrong
+one, and reads the arch from the `.so` itself):
 
 ```sh
-dist/MPC-Synthdrums-1.0.0-mpc-armv7.zip     # 78 files, 2.1 MB
-sha256 fc840b6663f25d42417e1ad99b8756ee6418d35180348fa98b09c6e552227485
+dist/MPC-Synthdrums-1.0.0-mpc-armv7.zip      # Gen1 (MPC Force, Live/One/X/Key 1-2): 78 files, 2.1 MB
+                                             # sha256 fc840b6663f25d42417e1ad99b8756ee6418d35180348fa98b09c6e552227485
+dist/MPC-Synthdrums-1.0.0-mpc-aarch64.zip    # Gen2 (MPC Live/One/X/Key 3, MPC 500): 78 files, 2.1 MB
+                                             # sha256 cd46fd80884c55ad96a8380d6ab66d25bb912885d7eedbb72c049d780c7f8764
 ```
 
-It was produced by (this is also the re-build command; `python3 …/release.py --help` documents the flags):
+Each was produced by (`python3 …/release.py --help` documents the flags; the armv7 run uses `build/arm/synthdrums.so`,
+the aarch64 run `build/arm64/synthdrums.so`, everything else identical):
 
 ```sh
 python3 third_party/mpc-vst-plugins/tools/release.py \
@@ -67,14 +73,17 @@ python3 third_party/mpc-vst-plugins/tools/release.py \
   -o dist
 ```
 
-`dist/` is gitignored, so the zip is a build artifact, not a commit.
+`dist/` is gitignored, so the zips are build artifacts, not commits.
 
 Scripted install (the zip's own installer; it stops and restarts MPC, so save the project first):
 
 ```sh
-scp dist/MPC-Synthdrums-1.0.0-mpc-armv7.zip root@<ip>:/tmp/
-ssh root@<ip> "cd /tmp && unzip -o MPC-Synthdrums-1.0.0-mpc-armv7.zip && sh MPC-Synthdrums-1.0.0/install.sh"
+scp dist/MPC-Synthdrums-1.0.0-mpc-<armv7|aarch64>.zip root@<ip>:/tmp/
+ssh root@<ip> "cd /tmp && unzip -o MPC-Synthdrums-1.0.0-mpc-<armv7|aarch64>.zip && sh MPC-Synthdrums-1.0.0/install.sh"
 ```
+
+The installer registers `pluginList-arm` on Gen1 and `pluginList-arm-64bit` on Gen2 (from the `.so`'s ELF arch), so no
+manual settings edit is needed either way.
 
 If the device has no `unzip`, unzip locally and copy the folder, then run its `install.sh` the same way.
 
