@@ -41,7 +41,10 @@ static float vel_xfade(float depth, float vel)
 }
 
 /* A knob that runs exponentially between two times in seconds (the amp decays: 2 ms .. 4 s, the pitch
- * envelope: 1 ms .. 300 ms). */
+ * envelope: 1 ms .. 300 ms). The pitch envelope's range is deliberately short: a drum's pitch sweep is
+ * over in well under a second, so a long sweep would sound like a siren rather than a drum. It is a
+ * musical choice, not a test requirement -- the engine's pitch-sweep property test passes with either
+ * range. */
 static float knob_time(float v, float lo, float hi)
 {
     return lo * powf(hi / lo, v * (1.0f / 127.0f));
@@ -86,6 +89,11 @@ static float lfsr_next(uint32_t *st)
 
 void sd_voice_reset(Voice *v)
 {
+    v->vel = 0.0f;          /* the trigger's velocity and the four crossfade scalars it feeds */
+    v->vel_vol = 0.0f;
+    v->vel_osc = 0.0f;
+    v->vel_noise = 0.0f;
+    v->vel_penv = 0.0f;
     v->phase = 0.0f;
     v->amp = 0.0f;
     v->penv = 0.0f;
@@ -128,7 +136,7 @@ void sd_voice_render(Voice *v, float *mono, int frames)
     const float tau_n = knob_time(VP(v, P_NOISE_DECAY), 0.002f, 4.0f);
     const float ta_n = knob_attack(VP(v, P_NOISE_ATTACK), 0.3f);
     const float g_n = VP(v, P_NOISE_SHAPE) * (1.0f / 127.0f);
-    const float tau_p = knob_time(VP(v, P_PENV_DECAY), 0.001f, 0.3f);
+    const float tau_p = knob_time(VP(v, P_PENV_DECAY), 0.001f, 0.3f);   /* the pitch sweep is short by design */
     const float ta_p = knob_attack(VP(v, P_PENV_ATTACK), 0.3f);
     const float g_p = VP(v, P_PENV_SHAPE) * (1.0f / 127.0f);
     /* The voice's own key, the played note's octave offset and the pitch knob give the base pitch; the pitch
