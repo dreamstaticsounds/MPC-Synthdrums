@@ -11,8 +11,11 @@ numbers for "display": "int" parameters and the option's index (0-based: VOICE 0
 twelfth) for option lists, and the engine keeps them as they are (src/synth.h: a patch is one float per
 parameter per voice).
 
-The edit panel edits the selected voice (src/patches.c): P_VEL_TO_VOL .. P_CHOKE, EDIT_PARAMS of them, all
+The edit panel edits the selected voice (src/patches.c): P_PITCH .. P_CHOKE, EDIT_PARAMS of them, all
 PK_PATCH and contiguous. Everything after them selects/auditions the voices or resets the kit.
+`pitch` comes first: the framework's host test turns a data wheel click into 1% of a param's range and
+expects one step, so the first "display": "int" param must span at most 100 (-24..24 = 48 here; a
+0..127 param would read 1.27 and round to two steps -- GAIAXXL's first int is pitch for the same reason).
 
 Kinds (params_gen.h):
   PK_PATCH  stored in a patch (one voice's sound) -- EDIT_PARAMS of them, one edit panel
@@ -44,6 +47,8 @@ def P(key, name, lo=0, hi=127, d=0, opts=None, kind="PK_PATCH", **extra):
 
 
 PARAMS = [
+    # PITCH (first: the host test's wheel-step check wants a narrow first int param -- see the docstring)
+    P("pitch", "PITCH", -24, 24, 0),
     # CONTROL (the five velocity routings)
     P("vel_to_vol", "VEL\u2192VOL", 0, 127, 127),
     P("vel_to_cut", "VEL\u2192CUT", 0, 127, 0),
@@ -57,7 +62,6 @@ PARAMS = [
     P("osc_shape", "OSC SHAPE", 0, 127, 0),
     P("osc_xmod", "OSC X-MOD", 0, 127, 0),
     # PITCH
-    P("pitch", "PITCH", -24, 24, 0),
     P("pitch_track", "KEY TRACK", 0, 127, 0),
     P("penv_attack", "P.ENV ATTACK", 0, 127, 0),
     P("penv_decay", "P.ENV DECAY", 0, 127, 0),
@@ -110,7 +114,7 @@ for p in PARAMS:   # momentary keys: a plain 0..1 with no int display
 _edit = [i for i, p in enumerate(PARAMS) if p["kind"] == "PK_PATCH"]
 assert _edit == list(range(_edit[0], _edit[-1] + 1)), "the edit panel's parameters must be contiguous"
 EDIT_PARAMS = len(_edit)
-assert (PARAMS[_edit[0]]["key"], PARAMS[_edit[-1]]["key"]) == ("vel_to_vol", "choke"), "P_VEL_TO_VOL .. P_CHOKE"
+assert (PARAMS[_edit[0]]["key"], PARAMS[_edit[-1]]["key"]) == ("pitch", "choke"), "P_PITCH .. P_CHOKE"
 
 
 def params_json():
@@ -133,7 +137,9 @@ def header():
     for p in PARAMS:
         L.append("    %s," % cname(p["key"]))
     L += ["    P_COUNT", "};", "",
-          "/* the edit panel: one contiguous PK_PATCH block (the selected voice), P_VEL_TO_VOL .. P_CHOKE */",
+          "/* the edit panel's first parameter: the contiguous PK_PATCH block's anchor (p[] index 0) */",
+          "#define P_EDIT_FIRST %s" % cname(PARAMS[_edit[0]]["key"]), "",
+          "/* the edit panel: one contiguous PK_PATCH block (the selected voice), P_PITCH .. P_CHOKE */",
           "#define EDIT_PARAMS %d" % EDIT_PARAMS, "",
           "static const ParamDef PDEF[P_COUNT] = {"]
     for p in PARAMS:

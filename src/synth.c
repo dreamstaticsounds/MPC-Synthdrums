@@ -38,13 +38,13 @@ static void destroy(void *p) { free(p); }
  * voice never chokes and is never choked. */
 static void choke_group(Synth *s, int idx)
 {
-    const int g = (int)(s->v[idx].p[P_CHOKE - P_VEL_TO_VOL] + 0.5f);
+    const int g = (int)(s->v[idx].p[P_CHOKE - P_EDIT_FIRST] + 0.5f);
     int j;
     if (g <= 0) return;
     for (j = 0; j < 12; j++) {
         Voice *o = &s->v[j];
         if (j == idx || !o->sounding) continue;
-        if ((int)(o->p[P_CHOKE - P_VEL_TO_VOL] + 0.5f) != g) continue;
+        if ((int)(o->p[P_CHOKE - P_EDIT_FIRST] + 0.5f) != g) continue;
         o->choke_fading = 1;   /* the fade starts at full level and reaches silence in 5 ms */
         o->choke_t = 0.0f;
         o->choke_gain = 1.0f;
@@ -130,7 +130,7 @@ static void deserialize(Synth *s, const char *text)
                 char *end;
                 const double d = strtod(q, &end);
                 if (end == q) break;   /* short line: the rest stays at the init values */
-                s->v[idx - 1].p[k] = clampf((float)d, PDEF[P_VEL_TO_VOL + k].min, PDEF[P_VEL_TO_VOL + k].max);
+                s->v[idx - 1].p[k] = clampf((float)d, PDEF[P_EDIT_FIRST + k].min, PDEF[P_EDIT_FIRST + k].max);
                 q = end;
                 if (*q != ',') break;   /* extra values are ignored */
                 q++;
@@ -153,7 +153,7 @@ static void set_param(void *p, const char *k, const char *val)
         const float f = clampf((float)atof(val), d->min, d->max);
         switch (d->kind) {
         case PK_PATCH:
-            s->v[s->sel].p[i - P_VEL_TO_VOL] = f;
+            s->v[s->sel].p[i - P_EDIT_FIRST] = f;
             break;
         case PK_UI:
             if (i == P_VOICE) {
@@ -223,7 +223,7 @@ static int get_param(void *p, const char *k, char *buf, int n)
         return put(buf, n, t);
     }
     if (PDEF[i].kind == PK_PATCH) {
-        const float v = s->v[s->sel].p[i - P_VEL_TO_VOL];
+        const float v = s->v[s->sel].p[i - P_EDIT_FIRST];
         if (PDEF[i].nopts) snprintf(t, sizeof t, "%d", (int)v);
         else snprintf(t, sizeof t, "%g", v);
         return put(buf, n, t);

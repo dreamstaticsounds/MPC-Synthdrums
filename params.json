@@ -2,6 +2,14 @@
  "name": "MPC Synthdrums",
  "params": [
   {
+   "key": "pitch",
+   "name": "PITCH",
+   "default": 0,
+   "min": -24,
+   "max": 24,
+   "display": "int"
+  },
+  {
    "key": "vel_to_vol",
    "name": "VEL\u2192VOL",
    "default": 127,
@@ -71,14 +79,6 @@
    "default": 0,
    "min": 0,
    "max": 127,
-   "display": "int"
-  },
-  {
-   "key": "pitch",
-   "name": "PITCH",
-   "default": 0,
-   "min": -24,
-   "max": 24,
    "display": "int"
   },
   {

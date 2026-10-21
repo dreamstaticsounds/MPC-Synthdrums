@@ -6,6 +6,7 @@ typedef enum { PK_PATCH, PK_UI, PK_TRIG, PK_SHOW } ParamKind;
 typedef struct { const char *key; ParamKind kind; float min, max, def; int nopts; } ParamDef;
 
 enum {
+    P_PITCH,
     P_VEL_TO_VOL,
     P_VEL_TO_CUT,
     P_VEL_TO_NOISE,
@@ -15,7 +16,6 @@ enum {
     P_OSC_DECAY,
     P_OSC_SHAPE,
     P_OSC_XMOD,
-    P_PITCH,
     P_PITCH_TRACK,
     P_PENV_ATTACK,
     P_PENV_DECAY,
@@ -51,10 +51,14 @@ enum {
     P_COUNT
 };
 
-/* the edit panel: one contiguous PK_PATCH block (the selected voice), P_VEL_TO_VOL .. P_CHOKE */
+/* the edit panel's first parameter: the contiguous PK_PATCH block's anchor (p[] index 0) */
+#define P_EDIT_FIRST P_PITCH
+
+/* the edit panel: one contiguous PK_PATCH block (the selected voice), P_PITCH .. P_CHOKE */
 #define EDIT_PARAMS 35
 
 static const ParamDef PDEF[P_COUNT] = {
+    {"pitch", PK_PATCH, -24, 24, 0, 0},
     {"vel_to_vol", PK_PATCH, 0, 127, 127, 0},
     {"vel_to_cut", PK_PATCH, 0, 127, 0, 0},
     {"vel_to_noise", PK_PATCH, 0, 127, 0, 0},
@@ -64,7 +68,6 @@ static const ParamDef PDEF[P_COUNT] = {
     {"osc_decay", PK_PATCH, 0, 127, 64, 0},
     {"osc_shape", PK_PATCH, 0, 127, 0, 0},
     {"osc_xmod", PK_PATCH, 0, 127, 0, 0},
-    {"pitch", PK_PATCH, -24, 24, 0, 0},
     {"pitch_track", PK_PATCH, 0, 127, 0, 0},
     {"penv_attack", PK_PATCH, 0, 127, 0, 0},
     {"penv_decay", PK_PATCH, 0, 127, 0, 0},

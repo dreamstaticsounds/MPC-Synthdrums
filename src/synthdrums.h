@@ -13,9 +13,9 @@
 #define FILT_MIN_HZ 20.0f
 #define FILT_MAX_HZ 18000.0f
 
-/* The edit panel is one contiguous PK_PATCH block (P_VEL_TO_VOL .. P_CHOKE): every parameter indexed by
- * (param - P_VEL_TO_VOL) lives in the selected voice's p[]. */
-_Static_assert(P_CHOKE - P_VEL_TO_VOL + 1 == EDIT_PARAMS, "the edit panel must be one contiguous PK_PATCH block");
+/* The edit panel is one contiguous PK_PATCH block (P_PITCH .. P_CHOKE): every parameter indexed by
+ * (param - P_EDIT_FIRST) lives in the selected voice's p[]. */
+_Static_assert(P_CHOKE - P_EDIT_FIRST + 1 == EDIT_PARAMS, "the edit panel must be one contiguous PK_PATCH block");
 
 /* src/filter.c: the voice's biquad filter (RBJ's cookbook: 12 dB/oct, low pass / band pass / high pass with
  * a resonant peak). The coefficients are normalized (a0 = 1), the delay line is Direct Form I and the env
@@ -63,7 +63,7 @@ float eq_step(PeakEQ *e, float x);
 #define CHOKE_FADE_S 0.005f
 
 typedef struct {
-    float p[EDIT_PARAMS];   /* the voice's sound: P_VEL_TO_VOL .. P_CHOKE, in parameter order */
+    float p[EDIT_PARAMS];   /* the voice's sound: P_PITCH .. P_CHOKE, in parameter order */
     int sounding;           /* a trigger (a pad, TRIG) hit this voice and its one-shot has not finished yet */
     /* The voice's DSP state. sd_voice_note() resets all of it at every trigger, so two hits with the same
      * settings render bit-identical audio (the engine's per-hit determinism guarantee). */

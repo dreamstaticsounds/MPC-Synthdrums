@@ -30,7 +30,7 @@
 #define LFSR_TAPS 0xD0000001u
 #define LFSR_SEED 0x12345678u
 
-#define VP(v, P_) ((v)->p[(P_) - P_VEL_TO_VOL])
+#define VP(v, P_) ((v)->p[(P_) - P_EDIT_FIRST])
 
 static float clampf(float v, float lo, float hi) { return v < lo ? lo : v > hi ? hi : v; }
 
