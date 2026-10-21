@@ -11,14 +11,13 @@
  *    brings it back to 0 exponentially, penv_shape blends the curve from exponential to linear
  *  - pitch_track: the played octave above the voice's own key, scaled by track/127, in semitones
  *  - the noise: a white LFSR -> the colour's tilt -> its own amp env -> its own low-pass -> the osc/noise mix
+ *  - the filter: the mix -> a resonant 12 dB/oct biquad (LP/BP/HP) -> the level
  *  - the velocity routings: m = 1 - depth/127 + (depth/127)*vel on the amp, the two sources and the penv depth */
 #include <math.h>
 #include <stdint.h>
 #include "synthdrums.h"
 
-/* The engine runs at 44100 Hz (the wrapper's contract). */
-#define SD_SR 44100.0f
-#define TWO_PI 6.28318530717958648f
+/* The sample step: the engine runs at 44100 Hz (the wrapper's contract, SD_SR). */
 #define DT (1.0f / SD_SR)
 
 /* A voice whose amp envelope has fallen below this is silent: the one-shot is over and the voice drops out
@@ -32,12 +31,21 @@
 
 #define VP(v, P_) ((v)->p[(P_) - P_VEL_TO_VOL])
 
+static float clampf(float v, float lo, float hi) { return v < lo ? lo : v > hi ? hi : v; }
+
 /* The velocity crossfade law (the brief's): m = 1 - depth/127 + (depth/127)*vel. A depth of 0 leaves the level
  * alone, a depth of 127 makes it proportional to the velocity. */
 static float vel_xfade(float depth, float vel)
 {
     const float d = depth * (1.0f / 127.0f);
     return 1.0f - d + d * vel;
+}
+
+/* The filter's cutoff knob: a log sweep from 30 Hz to 16 kHz, so the bottom of the range is a dark thud
+ * and the top is wide open. */
+static float knob_freq(float v)
+{
+    return 30.0f * powf(16000.0f / 30.0f, v * (1.0f / 127.0f));
 }
 
 /* A knob that runs exponentially between two times in seconds (the amp decays: 2 ms .. 4 s, the pitch
@@ -103,6 +111,19 @@ void sd_voice_reset(Voice *v)
     v->brown = 0.0f;
     v->nfilt = 0.0f;
     v->lfsr = LFSR_SEED;
+    /* the filter: the coefficients, the delay line and the filter env's offset are per-hit state too, so
+     * two hits with the same settings are bit-identical */
+    v->filt.b0 = 0.0f;
+    v->filt.b1 = 0.0f;
+    v->filt.b2 = 0.0f;
+    v->filt.a1 = 0.0f;
+    v->filt.a2 = 0.0f;
+    v->filt.x1 = 0.0f;
+    v->filt.x2 = 0.0f;
+    v->filt.y1 = 0.0f;
+    v->filt.y2 = 0.0f;
+    v->filt.env = 0.0f;
+    v->fenv_t = 0.0f;
     v->sounding = 0;
 }
 
@@ -145,7 +166,29 @@ void sd_voice_render(Voice *v, float *mono, int frames)
     const float track = VP(v, P_PITCH_TRACK) * (1.0f / 127.0f);
     const float base_semis = key + VP(v, P_PITCH) + ((float)v->note - key) * track;
     const float inc0 = (440.0f * powf(2.0f, (base_semis - 69.0f) / 12.0f)) / SD_SR;
+    /* The filter's settings: the cutoff knob (30 Hz .. 16 kHz, a log sweep), the resonance (Q 0.7 .. 9, a
+     * bounded peak -- it is a drum, not a siren), the mode and the velocity routing. The velocity moves the
+     * cutoff around the middle: depth/127 * (vel - 0.5) * 3 kHz, so a soft hit is darker than a hard one. */
+    const float cut_knob = knob_freq(VP(v, P_FILTER_CUTOFF));
+    const float q = 0.7f + 8.3f * (VP(v, P_FILTER_RES) * (1.0f / 127.0f));
+    const int mode = (int)(VP(v, P_FILTER_MODE) + 0.5f);
+    const float vel_cut = VP(v, P_VEL_TO_CUT) * (1.0f / 127.0f) * (v->vel - 0.5f) * 3000.0f;
+    /* The filter env: a one-shot cutoff envelope that starts amount * 4 kHz / 63 above (or below) the
+     * cutoff and decays back to it. An amount of 0 is the env off: no sweep at all. */
+    const int fenv_on = (VP(v, P_FENV_AMOUNT) != 0.0f);
+    const float fenv_amt = VP(v, P_FENV_AMOUNT) * (4000.0f / 63.0f);
+    const float tau_f = knob_time(VP(v, P_FENV_DECAY), 0.002f, 2.0f);
+    const float cut_base = cut_knob + vel_cut;
+    float fenv0 = 0.0f;   /* the env's start offset, in Hz */
     int i;
+
+    /* The env's start is clamped to the filter's range, so the sweep always starts inside it and decays
+     * back to the cutoff the knob (and the velocity) asked for. */
+    if (fenv_on) fenv0 = clampf(cut_base + fenv_amt, FILT_MIN_HZ, FILT_MAX_HZ) - cut_base;
+    else v->filt.env = 0.0f;
+
+    /* The filter's coefficients: once a block, or every sample while the env sweeps the cutoff. */
+    filt_set(&v->filt, clampf(cut_base + fenv0, FILT_MIN_HZ, FILT_MAX_HZ), q, mode);
 
     for (i = 0; i < frames; i++) {
         float w, inc, osc, noise, out;
@@ -181,9 +224,20 @@ void sd_voice_render(Voice *v, float *mono, int frames)
         v->nenv = env_level(v->t_nenv, ta_n, tau_n, g_n);
         v->nfilt += a_nf * (v->brown * v->nenv - v->nfilt);
 
-        /* The osc/noise mix and the velocity routings. */
+        /* The osc/noise mix. */
         noise = v->nfilt;
         out = osc * v->amp * osc_gain + noise * noise_gain;
+
+        /* The filter env: the offset decays to zero, so the cutoff sweeps back to the knob's. */
+        if (fenv_on) {
+            v->fenv_t += DT;
+            v->filt.env = fenv0 * expf(-v->fenv_t / tau_f);
+            filt_set(&v->filt, clampf(cut_base + v->filt.env, FILT_MIN_HZ, FILT_MAX_HZ), q, mode);
+        }
+
+        /* The filter sits between the mix and the level: it colours the whole voice, the velocity's level
+         * rides on top of it. */
+        out = filt_step(&v->filt, out);
         out *= v->vel_vol;
         mono[i] += out;
     }

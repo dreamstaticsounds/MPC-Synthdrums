@@ -5,9 +5,30 @@
 #include <stdint.h>
 #include "params_gen.h"
 
+/* The engine runs at 44100 Hz (the wrapper's contract). */
+#define SD_SR 44100.0f
+#define TWO_PI 6.28318530717958648f
+
+/* The filter's range: the cutoff knob's top (16 kHz) plus the filter env's reach (4 kHz) is clamped here. */
+#define FILT_MIN_HZ 20.0f
+#define FILT_MAX_HZ 18000.0f
+
 /* The edit panel is one contiguous PK_PATCH block (P_VEL_TO_VOL .. P_CHOKE): every parameter indexed by
  * (param - P_VEL_TO_VOL) lives in the selected voice's p[]. */
 _Static_assert(P_CHOKE - P_VEL_TO_VOL + 1 == EDIT_PARAMS, "the edit panel must be one contiguous PK_PATCH block");
+
+/* src/filter.c: the voice's biquad filter (RBJ's cookbook: 12 dB/oct, low pass / band pass / high pass with
+ * a resonant peak). The coefficients are normalized (a0 = 1), the delay line is Direct Form I and the env
+ * field holds the filter envelope's current cutoff offset, in Hz (the voice decays it and asks for a new
+ * coefficient set as it sweeps). */
+typedef struct {
+    float b0, b1, b2, a1, a2;   /* the normalized coefficients */
+    float x1, x2, y1, y2;       /* the delay line */
+    float env;                  /* the filter env's cutoff offset, in Hz */
+} Filt;
+
+void filt_set(Filt *f, float cutoff_hz, float q, int mode /*0=LP,1=BP,2=HP*/);
+float filt_step(Filt *f, float x);
 
 typedef struct {
     float p[EDIT_PARAMS];   /* the voice's sound: P_VEL_TO_VOL .. P_CHOKE, in parameter order */
@@ -31,6 +52,8 @@ typedef struct {
     float brown;            /* the noise colour's leaky integrator */
     float nfilt;            /* the noise tone filter's state */
     uint32_t lfsr;          /* the noise LFSR (re-seeded at every trigger) */
+    Filt filt;              /* the voice's filter: the coefficients, the delay line and the filter env */
+    float fenv_t;           /* the filter env's age, in seconds */
 } Voice;
 
 typedef struct {

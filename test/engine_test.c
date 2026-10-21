@@ -300,6 +300,31 @@ int main(void)
     sp(x, "osc_decay", 64); note(x, 36, 110); run(x, 5); note(x, 36, 0);
     Stat off = run(x, 30); CHECK(off.rms > 1e-3, "note-off ignored, one-shot keeps sounding");
 
+    /* ---- the filter (Task 4's block) ---- */
+    sp(x, "voice", 0);   /* keep MIDI note(36) and trig on the same voice for this section */
+    sp(x, "src_mix", 127); sp(x, "noise_decay", 127);   /* bright sustained noise */
+    sp(x, "filter_cutoff", 20); sp(x, "filter_res", 0); sp(x, "trig", 1); Stat lp_dark = run(x, 80);
+    sp(x, "filter_cutoff", 127); sp(x, "trig", 1); Stat lp_open = run(x, 80);
+    CHECK(lp_open.rms > lp_dark.rms * 2, "LP cutoff attenuates (%.4f vs %.4f)", lp_dark.rms, lp_open.rms);
+    /* self-oscillation at max res stays bounded, no NaN */
+    sp(x, "filter_cutoff", 30); sp(x, "filter_res", 127); sp(x, "trig", 1); s = run(x, 120);
+    CHECK(s.nan == 0 && s.peak < 32767 && s.rms < 0.7, "self-osc bounded (%d)", s.peak);
+    /* BP and HP differ from LP */
+    sp(x, "filter_mode", 1); sp(x, "trig", 1); Stat bp = run(x, 60);
+    sp(x, "filter_mode", 2); sp(x, "trig", 1); Stat hp = run(x, 60);
+    sp(x, "filter_mode", 0); sp(x, "trig", 1); Stat lp = run(x, 60);
+    CHECK(fabsf(bp.rms - lp.rms) > 1e-4 && fabsf(hp.rms - lp.rms) > 1e-4 && hp.nan == 0, "modes differ");
+    /* filter env: open transient then settle (decay 90 ≈ ~300 ms so fe catches the sweep) */
+    sp(x, "filter_res", 40); sp(x, "filter_cutoff", 30);
+    sp(x, "fenv_amount", 63); sp(x, "fenv_decay", 90); sp(x, "trig", 1);
+    Stat fe = run(x, 10); Stat fs = run_from(x, 300, 100);
+    CHECK(fe.rms > fs.rms * 1.3, "filter env opens then settles (%.4f vs %.4f)", fe.rms, fs.rms);
+    /* vel→cut: both hits via MIDI so they land on the same voice; vol flattened to isolate cut */
+    sp(x, "fenv_amount", 0); sp(x, "vel_to_cut", 127); sp(x, "vel_to_vol", 0);
+    note(x, 36, 127); Stat vc_loud = run(x, 40); note(x, 36, 5); Stat vc_quiet = run(x, 40);
+    CHECK(vc_loud.rms > vc_quiet.rms * 1.05, "vel_to_cut brightens with velocity (%.4f vs %.4f)", vc_loud.rms, vc_quiet.rms);
+    sp(x, "vel_to_cut", 0); sp(x, "vel_to_vol", 127);   /* restore for Task 5 */
+
     E->destroy(y);
     E->destroy(x);
     printf(fails ? "FAILED: %d\n" : "PASSED\n", fails);
