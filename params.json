@@ -1,0 +1,372 @@
+{
+ "name": "MPC Synthdrums",
+ "params": [
+  {
+   "key": "vel_to_vol",
+   "name": "VEL\u2192VOL",
+   "default": 127,
+   "min": 0,
+   "max": 127,
+   "display": "int"
+  },
+  {
+   "key": "vel_to_cut",
+   "name": "VEL\u2192CUT",
+   "default": 0,
+   "min": 0,
+   "max": 127,
+   "display": "int"
+  },
+  {
+   "key": "vel_to_noise",
+   "name": "VEL\u2192NOISE",
+   "default": 0,
+   "min": 0,
+   "max": 127,
+   "display": "int"
+  },
+  {
+   "key": "vel_to_osc",
+   "name": "VEL\u2192OSC",
+   "default": 0,
+   "min": 0,
+   "max": 127,
+   "display": "int"
+  },
+  {
+   "key": "vel_to_penv",
+   "name": "VEL\u2192P.ENV",
+   "default": 0,
+   "min": 0,
+   "max": 127,
+   "display": "int"
+  },
+  {
+   "key": "src_mix",
+   "name": "SRC OSC/NOISE",
+   "default": 0,
+   "min": 0,
+   "max": 127,
+   "display": "int"
+  },
+  {
+   "key": "osc_decay",
+   "name": "OSC DECAY",
+   "default": 64,
+   "min": 0,
+   "max": 127,
+   "display": "int"
+  },
+  {
+   "key": "osc_shape",
+   "name": "OSC SHAPE",
+   "default": 0,
+   "min": 0,
+   "max": 127,
+   "display": "int"
+  },
+  {
+   "key": "osc_xmod",
+   "name": "OSC X-MOD",
+   "default": 0,
+   "min": 0,
+   "max": 127,
+   "display": "int"
+  },
+  {
+   "key": "pitch",
+   "name": "PITCH",
+   "default": 0,
+   "min": -24,
+   "max": 24,
+   "display": "int"
+  },
+  {
+   "key": "pitch_track",
+   "name": "KEY TRACK",
+   "default": 0,
+   "min": 0,
+   "max": 127,
+   "display": "int"
+  },
+  {
+   "key": "penv_attack",
+   "name": "P.ENV ATTACK",
+   "default": 0,
+   "min": 0,
+   "max": 127,
+   "display": "int"
+  },
+  {
+   "key": "penv_decay",
+   "name": "P.ENV DECAY",
+   "default": 0,
+   "min": 0,
+   "max": 127,
+   "display": "int"
+  },
+  {
+   "key": "penv_shape",
+   "name": "P.ENV SHAPE",
+   "default": 64,
+   "min": 0,
+   "max": 127,
+   "display": "int"
+  },
+  {
+   "key": "penv_amount",
+   "name": "P.ENV AMOUNT",
+   "default": 0,
+   "min": -63,
+   "max": 63,
+   "display": "int"
+  },
+  {
+   "key": "noise_colour",
+   "name": "NOISE COLOUR",
+   "default": 64,
+   "min": 0,
+   "max": 127,
+   "display": "int"
+  },
+  {
+   "key": "noise_attack",
+   "name": "NOISE ATTACK",
+   "default": 0,
+   "min": 0,
+   "max": 127,
+   "display": "int"
+  },
+  {
+   "key": "noise_decay",
+   "name": "NOISE DECAY",
+   "default": 64,
+   "min": 0,
+   "max": 127,
+   "display": "int"
+  },
+  {
+   "key": "noise_shape",
+   "name": "NOISE SHAPE",
+   "default": 64,
+   "min": 0,
+   "max": 127,
+   "display": "int"
+  },
+  {
+   "key": "noise_filter",
+   "name": "NOISE FILTER",
+   "default": 127,
+   "min": 0,
+   "max": 127,
+   "display": "int"
+  },
+  {
+   "key": "stutter_length",
+   "name": "STUTTER LEN",
+   "default": 64,
+   "min": 0,
+   "max": 127,
+   "display": "int"
+  },
+  {
+   "key": "stutter_strength",
+   "name": "STUTTER STR",
+   "default": 0,
+   "min": 0,
+   "max": 127,
+   "display": "int"
+  },
+  {
+   "key": "filter_mode",
+   "name": "FILTER MODE",
+   "default": 0,
+   "options": [
+    "LP",
+    "BP",
+    "HP"
+   ],
+   "min": 0,
+   "max": 2
+  },
+  {
+   "key": "filter_res",
+   "name": "RES",
+   "default": 0,
+   "min": 0,
+   "max": 127,
+   "display": "int"
+  },
+  {
+   "key": "filter_cutoff",
+   "name": "CUTOFF",
+   "default": 127,
+   "min": 0,
+   "max": 127,
+   "display": "int"
+  },
+  {
+   "key": "fenv_amount",
+   "name": "F.ENV AMOUNT",
+   "default": 0,
+   "min": -63,
+   "max": 63,
+   "display": "int"
+  },
+  {
+   "key": "fenv_decay",
+   "name": "F.ENV DECAY",
+   "default": 64,
+   "min": 0,
+   "max": 127,
+   "display": "int"
+  },
+  {
+   "key": "dist_drive",
+   "name": "DIST DRIVE",
+   "default": 0,
+   "min": 0,
+   "max": 127,
+   "display": "int"
+  },
+  {
+   "key": "eq_freq",
+   "name": "EQ FREQ",
+   "default": 64,
+   "min": 0,
+   "max": 127,
+   "display": "int"
+  },
+  {
+   "key": "eq_gain",
+   "name": "EQ GAIN",
+   "default": 0,
+   "min": -63,
+   "max": 63,
+   "display": "int"
+  },
+  {
+   "key": "eq_q",
+   "name": "EQ Q",
+   "default": 64,
+   "min": 0,
+   "max": 127,
+   "display": "int"
+  },
+  {
+   "key": "out_pan",
+   "name": "PAN",
+   "default": 0,
+   "min": -64,
+   "max": 63,
+   "display": "int"
+  },
+  {
+   "key": "out_vol",
+   "name": "VOL",
+   "default": 100,
+   "min": 0,
+   "max": 127,
+   "display": "int"
+  },
+  {
+   "key": "out_sel",
+   "name": "OUT SEL",
+   "default": 0,
+   "options": [
+    "1",
+    "2",
+    "3"
+   ],
+   "min": 0,
+   "max": 2
+  },
+  {
+   "key": "choke",
+   "name": "CHOKE",
+   "default": 0,
+   "options": [
+    "OFF",
+    "G1",
+    "G2",
+    "G3",
+    "G4"
+   ],
+   "min": 0,
+   "max": 4
+  },
+  {
+   "key": "voice",
+   "name": "VOICE",
+   "default": 0,
+   "options": [
+    "1",
+    "2",
+    "3",
+    "4",
+    "5",
+    "6",
+    "7",
+    "8",
+    "9",
+    "10",
+    "11",
+    "12"
+   ],
+   "min": 0,
+   "max": 11
+  },
+  {
+   "key": "base_note",
+   "name": "BASE NOTE",
+   "default": 36,
+   "min": 0,
+   "max": 127,
+   "display": "int"
+  },
+  {
+   "key": "trig",
+   "name": "TRIG",
+   "default": 0,
+   "min": 0,
+   "max": 1,
+   "momentary": true
+  },
+  {
+   "key": "voice_prev",
+   "name": "VOICE <",
+   "default": 0,
+   "min": 0,
+   "max": 1,
+   "momentary": true,
+   "step_of": "voice",
+   "step_delta": -1
+  },
+  {
+   "key": "voice_next",
+   "name": "VOICE >",
+   "default": 0,
+   "min": 0,
+   "max": 1,
+   "momentary": true,
+   "step_of": "voice",
+   "step_delta": 1
+  },
+  {
+   "key": "kit_init",
+   "name": "KIT INIT",
+   "default": 0,
+   "min": 0,
+   "max": 1,
+   "momentary": true
+  },
+  {
+   "key": "voice_name",
+   "name": "VOICE NAME",
+   "default": 0,
+   "min": 0,
+   "max": 0,
+   "display": "string"
+  }
+ ]
+}

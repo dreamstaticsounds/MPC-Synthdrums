@@ -1,0 +1,162 @@
+#!/usr/bin/env python3
+"""The single source of MPC Synthdrums' parameters: writes params.json (mpc-vst-plugins) and src/params_gen.h.
+
+    python3 tools/gen_params.py          (writes both)
+    python3 tools/gen_params.py --check  (fails when either is stale)
+
+MPC saves a project's values by parameter index: once released, parameters are only ever appended to this list.
+
+Values are in the units the original's panel gives (0..127, -63..+63, -24..+24 ...); the wrapper sends whole
+numbers for "display": "int" parameters and the option's index (0-based: VOICE 0 is the first voice, 11 the
+twelfth) for option lists, and the engine keeps them as they are (src/synth.h: a patch is one float per
+parameter per voice).
+
+The edit panel edits the selected voice (src/patches.c): P_VEL_TO_VOL .. P_CHOKE, EDIT_PARAMS of them, all
+PK_PATCH and contiguous. Everything after them selects/auditions the voices or resets the kit.
+
+Kinds (params_gen.h):
+  PK_PATCH  stored in a patch (one voice's sound) -- EDIT_PARAMS of them, one edit panel
+  PK_UI     the voice selector, the keyboard base note: in the plugin state, not in a patch
+  PK_TRIG   a key (momentary): the voice arrows, the audition trigger, KIT INIT
+  PK_SHOW   read-only text (the selected voice's name)"""
+import json
+import os
+import sys
+
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+FILTER_MODES = ["LP", "BP", "HP"]
+OUT_SELS = ["1", "2", "3"]
+CHOKE_NAMES = ["OFF", "G1", "G2", "G3", "G4"]
+VOICE_NAMES = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12"]
+
+
+def P(key, name, lo=0, hi=127, d=0, opts=None, kind="PK_PATCH", **extra):
+    p = {"key": key, "name": name, "kind": kind, "default": d}
+    if opts:
+        p["options"] = opts
+        p["min"], p["max"] = 0, len(opts) - 1
+    else:
+        p["min"], p["max"] = lo, hi
+        p["display"] = "int"
+    p.update(extra)
+    return p
+
+
+PARAMS = [
+    # CONTROL (the five velocity routings)
+    P("vel_to_vol", "VEL\u2192VOL", 0, 127, 127),
+    P("vel_to_cut", "VEL\u2192CUT", 0, 127, 0),
+    P("vel_to_noise", "VEL\u2192NOISE", 0, 127, 0),
+    P("vel_to_osc", "VEL\u2192OSC", 0, 127, 0),
+    P("vel_to_penv", "VEL\u2192P.ENV", 0, 127, 0),
+    # SOURCE
+    P("src_mix", "SRC OSC/NOISE", 0, 127, 0),
+    # OSCILLATOR
+    P("osc_decay", "OSC DECAY", 0, 127, 64),
+    P("osc_shape", "OSC SHAPE", 0, 127, 0),
+    P("osc_xmod", "OSC X-MOD", 0, 127, 0),
+    # PITCH
+    P("pitch", "PITCH", -24, 24, 0),
+    P("pitch_track", "KEY TRACK", 0, 127, 0),
+    P("penv_attack", "P.ENV ATTACK", 0, 127, 0),
+    P("penv_decay", "P.ENV DECAY", 0, 127, 0),
+    P("penv_shape", "P.ENV SHAPE", 0, 127, 64),
+    P("penv_amount", "P.ENV AMOUNT", -63, 63, 0),
+    # NOISE
+    P("noise_colour", "NOISE COLOUR", 0, 127, 64),
+    P("noise_attack", "NOISE ATTACK", 0, 127, 0),
+    P("noise_decay", "NOISE DECAY", 0, 127, 64),
+    P("noise_shape", "NOISE SHAPE", 0, 127, 64),
+    P("noise_filter", "NOISE FILTER", 0, 127, 127),
+    # STUTTER
+    P("stutter_length", "STUTTER LEN", 0, 127, 64),
+    P("stutter_strength", "STUTTER STR", 0, 127, 0),
+    # FILTER
+    P("filter_mode", "FILTER MODE", d=0, opts=FILTER_MODES),
+    P("filter_res", "RES", 0, 127, 0),
+    P("filter_cutoff", "CUTOFF", 0, 127, 127),
+    P("fenv_amount", "F.ENV AMOUNT", -63, 63, 0),
+    P("fenv_decay", "F.ENV DECAY", 0, 127, 64),
+    # DIST
+    P("dist_drive", "DIST DRIVE", 0, 127, 0),
+    # EQ
+    P("eq_freq", "EQ FREQ", 0, 127, 64),
+    P("eq_gain", "EQ GAIN", -63, 63, 0),
+    P("eq_q", "EQ Q", 0, 127, 64),
+    # OUTPUT
+    P("out_pan", "PAN", -64, 63, 0),
+    P("out_vol", "VOL", 0, 127, 100),
+    P("out_sel", "OUT SEL", d=0, opts=OUT_SELS),
+    P("choke", "CHOKE", d=0, opts=CHOKE_NAMES),
+    # the voice selector, the keyboard assignment
+    P("voice", "VOICE", d=0, opts=VOICE_NAMES, kind="PK_UI"),
+    P("base_note", "BASE NOTE", 0, 127, 36, kind="PK_UI"),
+    # the keys
+    P("trig", "TRIG", kind="PK_TRIG", momentary=True),
+    P("voice_prev", "VOICE <", kind="PK_TRIG", momentary=True, step_of="voice", step_delta=-1),
+    P("voice_next", "VOICE >", kind="PK_TRIG", momentary=True, step_of="voice", step_delta=1),
+    P("kit_init", "KIT INIT", kind="PK_TRIG", momentary=True),
+    # the readout
+    P("voice_name", "VOICE NAME", 0, 0, 0, kind="PK_SHOW", display="string"),
+]
+
+for p in PARAMS:   # momentary keys: a plain 0..1 with no int display
+    if p.get("momentary"):
+        p["min"], p["max"] = 0, 1
+        p.pop("display", None)
+
+# the edit panel: the contiguous PK_PATCH block, one voice's parameters
+_edit = [i for i, p in enumerate(PARAMS) if p["kind"] == "PK_PATCH"]
+assert _edit == list(range(_edit[0], _edit[-1] + 1)), "the edit panel's parameters must be contiguous"
+EDIT_PARAMS = len(_edit)
+assert (PARAMS[_edit[0]]["key"], PARAMS[_edit[-1]]["key"]) == ("vel_to_vol", "choke"), "P_VEL_TO_VOL .. P_CHOKE"
+
+
+def params_json():
+    out = []
+    for p in PARAMS:
+        q = {k: v for k, v in p.items() if k != "kind"}
+        out.append(q)
+    return json.dumps({"name": "MPC Synthdrums", "params": out}, indent=1) + "\n"
+
+
+def cname(key):
+    return "P_" + key.upper()
+
+
+def header():
+    L = ["/* GENERATED by tools/gen_params.py: do not edit. MPC Synthdrums' parameters, in VST index order. */",
+         "#pragma once", "", "typedef enum { PK_PATCH, PK_UI, PK_TRIG, PK_SHOW } ParamKind;", "",
+         "typedef struct { const char *key; ParamKind kind; float min, max, def; int nopts; } ParamDef;", "",
+         "enum {"]
+    for p in PARAMS:
+        L.append("    %s," % cname(p["key"]))
+    L += ["    P_COUNT", "};", "",
+          "/* the edit panel: one contiguous PK_PATCH block (the selected voice), P_VEL_TO_VOL .. P_CHOKE */",
+          "#define EDIT_PARAMS %d" % EDIT_PARAMS, "",
+          "static const ParamDef PDEF[P_COUNT] = {"]
+    for p in PARAMS:
+        L.append('    {"%s", %s, %d, %d, %g, %d},' % (p["key"], p["kind"], p["min"], p["max"], p["default"],
+                                                      len(p.get("options") or [])))
+    L += ["};", ""]
+    for name, lst in [("FILTER_MODE", FILTER_MODES), ("OUT_SEL", OUT_SELS), ("CHOKE", CHOKE_NAMES),
+                      ("VOICE", VOICE_NAMES)]:
+        L.append("#define N_%s %d" % (name, len(lst)))
+    L.append("")
+    for name, arr, lst in [("FILTER_MODE", "FILTER_MODES", FILTER_MODES), ("OUT_SEL", "OUT_SELS", OUT_SELS),
+                           ("CHOKE", "CHOKE_NAMES", CHOKE_NAMES), ("VOICE", "VOICE_NAMES", VOICE_NAMES)]:
+        L.append("static const char *const %s[N_%s] = {%s};" % (arr, name, ", ".join('"%s"' % s for s in lst)))
+    return "\n".join(L) + "\n"
+
+
+if __name__ == "__main__":
+    targets = {os.path.join(ROOT, "params.json"): params_json(), os.path.join(ROOT, "src", "params_gen.h"): header()}
+    if "--check" in sys.argv:
+        for f, t in targets.items():
+            if not os.path.exists(f) or open(f).read() != t:
+                raise SystemExit("%s is stale: run python3 tools/gen_params.py" % f)
+    else:
+        for f, t in targets.items():
+            open(f, "w").write(t)
+        print("%d parameters" % len(PARAMS))
