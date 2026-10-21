@@ -18,7 +18,7 @@ static int16_t buf[256];
 static void sp(void *x, const char *k, double v) { char b[32]; snprintf(b, sizeof b, "%g", v); E->set_param(x, k, b); }
 static void note(void *x, int n, int vel) { uint8_t m[3] = {(uint8_t)(vel ? 0x90 : 0x80), (uint8_t)n, (uint8_t)vel}; E->midi(x, m, 3); }
 
-typedef struct { double rms; int peak; int nan; } Stat;
+typedef struct { double rms; int peak; int nan; int peak_l; int peak_r; } Stat;
 typedef struct { double left, right; } StatLR;
 
 /* The engine counts the samples it had to silence because they were not finite (Synth.nan_count): a NaN that
@@ -28,7 +28,7 @@ static int nan_since(void *x, unsigned mark) { return (int)(((Synth *)x)->nan_co
 
 static Stat run(void *x, int blocks)
 {
-    Stat s = {0, 0, 0};
+    Stat s = {0, 0, 0, 0, 0};
     double acc = 0;
     long cnt = 0;
     const unsigned n0 = nan_mark(x);
@@ -41,6 +41,12 @@ static Stat run(void *x, int blocks)
             acc += (double)buf[i] * buf[i];
             cnt++;
         }
+        for (i = 0; i < 128; i++) {   /* the two channels' peaks on their own */
+            const int l = buf[2 * i] < 0 ? -buf[2 * i] : buf[2 * i];
+            const int r = buf[2 * i + 1] < 0 ? -buf[2 * i + 1] : buf[2 * i + 1];
+            if (l > s.peak_l) s.peak_l = l;
+            if (r > s.peak_r) s.peak_r = r;
+        }
     }
     s.rms = cnt ? sqrt(acc / (double)cnt) / 32768.0 : 0.0;
     s.nan = nan_since(x, n0);
@@ -51,7 +57,7 @@ static Stat run(void *x, int blocks)
  * (Tasks 4 and 5 need them) are marked unused so the build stays warning-free. */
 static Stat run_from(void *x, int skip, int blocks)
 {
-    Stat s = {0, 0, 0};
+    Stat s = {0, 0, 0, 0, 0};
     double acc = 0;
     long cnt = 0;
     const unsigned n0 = nan_mark(x);
@@ -71,7 +77,7 @@ static Stat run_from(void *x, int skip, int blocks)
     return s;
 }
 
-static void __attribute__((unused)) run_windows(void *x, int nwin, int winblocks, float *rms_out)
+static void run_windows(void *x, int nwin, int winblocks, float *rms_out)
 {
     int w, b, i;
     for (w = 0; w < nwin; w++) {
@@ -85,7 +91,7 @@ static void __attribute__((unused)) run_windows(void *x, int nwin, int winblocks
     }
 }
 
-static StatLR __attribute__((unused)) run_lr(void *x, int blocks)
+static StatLR run_lr(void *x, int blocks)
 {
     StatLR r = {0.0, 0.0};
     double al = 0.0, ar = 0.0;
@@ -163,28 +169,34 @@ static float __attribute__((unused)) buf_rms(const float *a, int n)
     return n ? (float)sqrt(acc / (double)n) : 0.0f;
 }
 
-/* the biggest jump between two neighbouring samples, in int16 units */
-static float __attribute__((unused)) maxstep(void *x, int blocks)
+/* the biggest jump between two neighbouring samples of one channel, in int16 units.
+ * The engine is stereo now, so the measurement is per channel: the jump from the left sample to the right
+ * sample of an interleaved buffer is not a click, it is the stereo image (a hard-panned pair makes it
+ * ~16000 units). The plan's Task-5 text asks for "the choked channel's max sample-to-sample step", so
+ * the biggest jump inside either channel is what this measures. */
+static float maxstep(void *x, int blocks)
 {
-    int b, i, prev = 0, first = 1;
+    int b, i, prevl = 0, prevr = 0, first = 1;
     float m = 0.0f;
     for (b = 0; b < blocks; b++) {
         E->render(x, buf, 128);
-        for (i = 0; i < 256; i++) {
-            const int v = buf[i];
+        for (i = 0; i < 128; i++) {
+            const int l = buf[2 * i], r = buf[2 * i + 1];
             if (!first) {
-                const int d = v - prev;
-                const int ad = d < 0 ? -d : d;
-                if ((float)ad > m) m = (float)ad;
+                const int dl = l - prevl, dr = r - prevr;
+                const int al = dl < 0 ? -dl : dl, ar = dr < 0 ? -dr : dr;
+                if ((float)al > m) m = (float)al;
+                if ((float)ar > m) m = (float)ar;
             }
-            prev = v;
+            prevl = l;
+            prevr = r;
             first = 0;
         }
     }
     return m;
 }
 
-static float __attribute__((unused)) minf(const float *a, int n)
+static float minf(const float *a, int n)
 {
     float m = 0.0f;
     int i;
@@ -192,7 +204,7 @@ static float __attribute__((unused)) minf(const float *a, int n)
     return m;
 }
 
-static float __attribute__((unused)) maxf(const float *a, int n)
+static float maxf(const float *a, int n)
 {
     float m = 0.0f;
     int i;
@@ -324,6 +336,63 @@ int main(void)
     note(x, 36, 127); Stat vc_loud = run(x, 40); note(x, 36, 5); Stat vc_quiet = run(x, 40);
     CHECK(vc_loud.rms > vc_quiet.rms * 1.05, "vel_to_cut brightens with velocity (%.4f vs %.4f)", vc_loud.rms, vc_quiet.rms);
     sp(x, "vel_to_cut", 0); sp(x, "vel_to_vol", 127);   /* restore for Task 5 */
+
+    /* ---- the FX and the output (Task 5's block) ---- */
+/* prelude: one clean loud voice; everything Task 4 left dirty is restored/open */
+sp(x, "voice", 0); sp(x, "base_note", 36);
+sp(x, "src_mix", 0); sp(x, "osc_decay", 127); sp(x, "vel_to_vol", 127); sp(x, "vel_to_cut", 0);
+sp(x, "filter_cutoff", 127); sp(x, "filter_res", 0); sp(x, "filter_mode", 0); sp(x, "fenv_amount", 0);
+/* stutter gates the amplitude */
+sp(x, "stutter_length", 90); sp(x, "stutter_strength", 127); sp(x, "trig", 1);
+float w[12]; run_windows(x, 12, 10, w);
+CHECK(maxf(w, 12) > 0.01 && minf(w, 12) < maxf(w, 12) * 0.3, "stutter gates (%.4f..%.4f)", minf(w, 12), maxf(w, 12));
+sp(x, "stutter_strength", 0); sp(x, "trig", 1); run_windows(x, 12, 10, w);
+CHECK(minf(w, 12) > maxf(w, 12) * 0.75, "strength 0 = no gate, decay only (%.4f..%.4f)", minf(w, 12), maxf(w, 12));
+/* dist: changes the wave (harmonics) exactly, stays bounded — scale-independent via capdiff */
+sp(x, "osc_decay", 100); sp(x, "dist_drive", 0); sp(x, "trig", 1); cap(x, A, 60);
+sp(x, "dist_drive", 127); sp(x, "trig", 1); cap(x, B, 60);
+CHECK(capdiff(A, B, 128*60) > 1e-3, "dist changes the wave");
+sp(x, "trig", 1); Stat dr = run(x, 60);   /* deterministic: same render as B */
+CHECK(dr.nan == 0 && dr.peak < 32767 && dr.rms > 0.01, "dist bounded and audible (%.4f)", dr.rms);
+/* EQ on broadband noise (an osc tone sits far below eq_freq and would pass boost and cut alike) */
+sp(x, "dist_drive", 0); sp(x, "src_mix", 127); sp(x, "noise_decay", 127); sp(x, "noise_colour", 127);
+sp(x, "filter_cutoff", 127); sp(x, "filter_res", 0);
+sp(x, "eq_freq", 90); sp(x, "eq_q", 40);
+sp(x, "eq_gain", 63); sp(x, "trig", 1); float boost = run(x, 60).rms;
+sp(x, "eq_gain", -63); sp(x, "trig", 1); float cut = run(x, 60).rms;
+CHECK(boost > cut * 1.3, "EQ boost vs cut (%.4f vs %.4f)", boost, cut);
+sp(x, "eq_gain", 0); sp(x, "src_mix", 0);
+/* pan */
+sp(x, "out_pan", -63); sp(x, "trig", 1); StatLR l = run_lr(x, 60);
+sp(x, "out_pan", 63); sp(x, "trig", 1); StatLR r = run_lr(x, 60);
+CHECK(l.left > l.right * 8 && r.right > r.left * 8, "pan hard left/right");
+sp(x, "out_pan", 0);
+/* out_sel: inaudible by design (buses sum to main) — deterministic → bit-identical rms */
+sp(x, "out_sel", 0); sp(x, "trig", 1); float b1 = run(x, 40).rms;
+sp(x, "out_sel", 2); sp(x, "trig", 1); float b2 = run(x, 40).rms;
+CHECK(fabsf(b1 - b2) < 1e-6, "out_sel sums to main (%.6f vs %.6f)", b1, b2);
+sp(x, "out_sel", 0);
+/* choke: voices idx 0 and idx 2 share group 1, hard-panned apart so the choke is visible per channel;
+   choker has a short body of its own so the post-choke window holds only what must be silent */
+sp(x, "voice", 0); sp(x, "osc_decay", 127); sp(x, "out_pan", -63); sp(x, "choke", 1);
+sp(x, "voice", 2); sp(x, "src_mix", 0); sp(x, "osc_decay", 30); sp(x, "out_pan", 63); sp(x, "choke", 1);
+sp(x, "voice", 0); sp(x, "trig", 1); run(x, 10);        /* voice 0 sustaining on the left */
+sp(x, "voice", 2); sp(x, "trig", 1);                    /* voice 2 hits right, chokes voice 0 */
+float step = maxstep(x, 20);                            /* both channels, covers the 5 ms choke fade */
+CHECK(step < 1000, "choke fade, no click (max step %.0f)", step);
+Stat after = run(x, 100);
+/* the choked voice is the one panned left, so the check watches that channel (the plan: "and that the
+   channel goes silent after"). The mix's own peak is the choker's residual tail on the right: its
+   osc_decay 30 is a 12 ms tau, so 58 ms after the trigger it is still at 0.8% of full scale (288 int16). */
+CHECK(after.peak_l < 200, "choked voice silent (%d)", after.peak_l);
+sp(x, "voice", 0); sp(x, "choke", 0); sp(x, "out_pan", 0);
+sp(x, "voice", 2); sp(x, "choke", 0); sp(x, "out_pan", 0);
+sp(x, "voice", 0);
+/* 12 drums at once: soft-clip holds the ceiling and they stay loud */
+for (int v = 0; v < 12; v++) { sp(x, "voice", v); sp(x, "osc_decay", 127); sp(x, "out_vol", 127);
+  sp(x, "out_pan", 0); sp(x, "choke", 0); sp(x, "trig", 1); }
+s = run(x, 100);
+CHECK(s.nan == 0 && s.peak <= 32767 && s.peak > 24000, "12-voice sum loud and under ceiling (%d)", s.peak);
 
     E->destroy(y);
     E->destroy(x);

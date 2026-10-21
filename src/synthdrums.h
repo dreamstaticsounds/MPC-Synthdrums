@@ -30,6 +30,38 @@ typedef struct {
 void filt_set(Filt *f, float cutoff_hz, float q, int mode /*0=LP,1=BP,2=HP*/);
 float filt_step(Filt *f, float x);
 
+/* src/fx.c -- the voice's effects (the chain: sources -> filter -> stutter -> dist -> EQ -> pan/vol).
+ *
+ * The stutter: a square gate whose phase runs at the "length" knob's rate. Only the phase is state:
+ * the gate's shape (the 5 ms raised-cosine edges) follows from the rate, so the struct stays this small.
+ * The phase is reset at every trigger, so two hits with the same settings are bit-identical. */
+typedef struct {
+    float phase;            /* the gate's phase, 0..1 */
+} Stutter;
+float fx_stutter_step(Stutter *s, float x, float rate_hz, float depth);
+
+/* The waveshaper: a tanh-style curve with a pre-gain and a makeup. drive01 = 0 is exactly unity. */
+float fx_dist(float x, float drive01);
+
+/* The peaking EQ: an RBJ bell. The brief's four state fields come first, in the brief's order: x1 and bx1
+ * are the input's delays (n-1 and n-2), y1 and by1 the output's (n-1 and n-2). The five RBJ coefficients
+ * follow: they cannot live in the four state fields, so the struct carries them too (eq_set fills them,
+ * eq_step reads them). */
+typedef struct {
+    float x1, y1;       /* the input's delay (n-1) and the output's delay (n-1) */
+    float bx1, by1;     /* the input's delay (n-2) and the output's delay (n-2) */
+    float b0, b1, b2, a1, a2;   /* the RBJ coefficients, normalized (a0 = 1) */
+} PeakEQ;
+void eq_set(PeakEQ *e, float hz, float gain_db, float q);
+float eq_step(PeakEQ *e, float x);
+
+/* The EQ's range: the "freq" knob's log sweep, 40 Hz .. 12 kHz. */
+#define EQ_MIN_HZ 40.0f
+#define EQ_MAX_HZ 12000.0f
+
+/* The choke fade: 5 ms, from full level to silence. */
+#define CHOKE_FADE_S 0.005f
+
 typedef struct {
     float p[EDIT_PARAMS];   /* the voice's sound: P_VEL_TO_VOL .. P_CHOKE, in parameter order */
     int sounding;           /* a trigger (a pad, TRIG) hit this voice and its one-shot has not finished yet */
@@ -54,6 +86,11 @@ typedef struct {
     uint32_t lfsr;          /* the noise LFSR (re-seeded at every trigger) */
     Filt filt;              /* the voice's filter: the coefficients, the delay line and the filter env */
     float fenv_t;           /* the filter env's age, in seconds */
+    Stutter stut;           /* the stutter gate's phase */
+    PeakEQ eq;              /* the peaking EQ's coefficients and delay line */
+    float choke_gain;       /* the choke fade's multiplier: 1 = free, 0 = silenced */
+    float choke_t;          /* the choke fade's age, in seconds */
+    int choke_fading;       /* the choke fade is running: the voice is on its way to silence */
 } Voice;
 
 typedef struct {
@@ -72,4 +109,4 @@ void patch_init_kit(Synth *s);
  * velocity routings. Nothing here allocates and nothing here touches the other voices. */
 void sd_voice_reset(Voice *v);                              /* zero the DSP state */
 void sd_voice_note(Voice *v, float vel);                    /* (re)trigger: restart everything, keep the velocity scalars */
-void sd_voice_render(Voice *v, float *mono, int frames);    /* add this voice's signal to the mono bus */
+void sd_voice_render(Voice *v, float *bus, int frames);   /* add the voice's signal to the stereo bus (interleaved: 2*frames floats) */

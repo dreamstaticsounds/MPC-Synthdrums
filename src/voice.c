@@ -12,6 +12,7 @@
  *  - pitch_track: the played octave above the voice's own key, scaled by track/127, in semitones
  *  - the noise: a white LFSR -> the colour's tilt -> its own amp env -> its own low-pass -> the osc/noise mix
  *  - the filter: the mix -> a resonant 12 dB/oct biquad (LP/BP/HP) -> the level
+ *  - the effects: the stutter gate -> the waveshaper -> the peaking EQ -> the pan and the level
  *  - the velocity routings: m = 1 - depth/127 + (depth/127)*vel on the amp, the two sources and the penv depth */
 #include <math.h>
 #include <stdint.h>
@@ -124,6 +125,17 @@ void sd_voice_reset(Voice *v)
     v->filt.y2 = 0.0f;
     v->filt.env = 0.0f;
     v->fenv_t = 0.0f;
+    /* the stutter's gate phase: per-hit state, so a retrigger starts the gate from the same place */
+    v->stut.phase = 0.0f;
+    /* the EQ's delay line: per-hit state too (the coefficients are recomputed every block) */
+    v->eq.x1 = 0.0f;
+    v->eq.y1 = 0.0f;
+    v->eq.bx1 = 0.0f;
+    v->eq.by1 = 0.0f;
+    /* the choke fade: a fresh hit is free (the fade only starts when another voice chokes this one) */
+    v->choke_gain = 1.0f;
+    v->choke_t = 0.0f;
+    v->choke_fading = 0;
     v->sounding = 0;
 }
 
@@ -140,7 +152,7 @@ void sd_voice_note(Voice *v, float vel)
     v->sounding = 1;
 }
 
-void sd_voice_render(Voice *v, float *mono, int frames)
+void sd_voice_render(Voice *v, float *bus, int frames)
 {
     /* The block's settings: the knobs may be turned while the hit rings. */
     const float mix = VP(v, P_SRC_MIX) * (1.0f / 127.0f);
@@ -182,6 +194,26 @@ void sd_voice_render(Voice *v, float *mono, int frames)
     float fenv0 = 0.0f;   /* the env's start offset, in Hz */
     int i;
 
+    /* The stutter: the gate's rate (0.5 .. 40 Hz, an exponential sweep -- the roll/echo-machine feel)
+     * and the gate's depth (0 = off, exactly; 1 = the gate closes completely between the bursts). */
+    const float stut_rate = 0.5f * powf(80.0f, VP(v, P_STUTTER_LENGTH) * (1.0f / 127.0f));
+    const float stut_depth = VP(v, P_STUTTER_STRENGTH) * (1.0f / 127.0f);
+    /* The waveshaper's drive: 0 = clean (the shaper is then exactly unity). */
+    const float drive01 = VP(v, P_DIST_DRIVE) * (1.0f / 127.0f);
+    /* The peaking EQ: the bell's frequency (a log sweep, 40 Hz .. 12 kHz), its gain (+/-18 dB) and its
+     * width (Q 0.5 .. 6, logarithmic: a Q knob is a musical control, so its ends are far apart and its
+     * middle is where a bell usually sits). */
+    const float eq_hz = EQ_MIN_HZ * powf(EQ_MAX_HZ / EQ_MIN_HZ, VP(v, P_EQ_FREQ) * (1.0f / 127.0f));
+    const float eq_db = VP(v, P_EQ_GAIN) * (18.0f / 63.0f);
+    const float eq_q = 0.5f * powf(12.0f, VP(v, P_EQ_Q) * (1.0f / 127.0f));
+    /* The output stage: the pan (equal power: -64 = hard left, 0 = centre, +63 = hard right) and the
+     * level (0 .. ~1.4x, the init patch's 100 is a little over unity). The "out_sel" knob is state-only:
+     * the MPC sums its three output buses to the main pair, so all three selections sound the same. */
+    const float pan_theta = (VP(v, P_OUT_PAN) + 64.0f) * (TWO_PI * 0.25f * (1.0f / 128.0f));
+    const float pan_l = cosf(pan_theta);
+    const float pan_r = sinf(pan_theta);
+    const float vol = 1.4f * (VP(v, P_OUT_VOL) * (1.0f / 127.0f));
+
     /* The env's start is clamped to the filter's range, so the sweep always starts inside it and decays
      * back to the cutoff the knob (and the velocity) asked for. */
     if (fenv_on) fenv0 = clampf(cut_base + fenv_amt, FILT_MIN_HZ, FILT_MAX_HZ) - cut_base;
@@ -189,6 +221,9 @@ void sd_voice_render(Voice *v, float *mono, int frames)
 
     /* The filter's coefficients: once a block, or every sample while the env sweeps the cutoff. */
     filt_set(&v->filt, clampf(cut_base + fenv0, FILT_MIN_HZ, FILT_MAX_HZ), q, mode);
+
+    /* The EQ's coefficients: once a block (the EQ has no envelope). */
+    eq_set(&v->eq, eq_hz, eq_db, eq_q);
 
     for (i = 0; i < frames; i++) {
         float w, inc, osc, noise, out;
@@ -239,7 +274,37 @@ void sd_voice_render(Voice *v, float *mono, int frames)
          * rides on top of it. */
         out = filt_step(&v->filt, out);
         out *= v->vel_vol;
-        mono[i] += out;
+
+        /* The stutter gate: it chops the voice's amplitude (the roll/echo-machine effect). */
+        out = fx_stutter_step(&v->stut, out, stut_rate, stut_depth);
+
+        /* The waveshaper: the drive knob's saturation (exactly unity when the knob is at zero). */
+        out = fx_dist(out, drive01);
+
+        /* The peaking EQ: the one band of the FX section. */
+        out = eq_step(&v->eq, out);
+
+        /* The choke fade: it lives in the voice's own output path (never in the master bus, which would
+         * fade the choking voice's own hit as well). The fade is a raised cosine over 5 ms, so it starts
+         * and ends without a step. */
+        if (v->choke_fading) {
+            float k;
+            v->choke_t += DT;
+            k = v->choke_t * (1.0f / CHOKE_FADE_S);
+            if (k >= 1.0f) {
+                v->choke_fading = 0;
+                v->choke_gain = 0.0f;
+            } else {
+                /* A raised cosine from full level to silence: it starts and ends without a step. */
+                v->choke_gain = 0.5f * (1.0f + cosf(TWO_PI * 0.5f * k));
+            }
+        }
+        out *= v->choke_gain;
+
+        /* The pan and the level: the voice's tail. */
+        out *= vol;
+        bus[2 * i] += out * pan_l;
+        bus[2 * i + 1] += out * pan_r;
     }
 
     /* The one-shot is over when nothing audible is left: the voice drops out of the 12-voice loop. */
@@ -247,5 +312,6 @@ void sd_voice_render(Voice *v, float *mono, int frames)
         const int amp_dead = (v->amp < ENV_FLOOR);
         const int noise_dead = (v->t_nenv > ta_n) && (v->nenv < ENV_FLOOR);
         if ((amp_dead || osc_gain <= 0.0f) && (noise_dead || noise_gain <= 0.0f)) v->sounding = 0;
+        if (v->choke_gain <= 0.0f) v->sounding = 0;   /* the choke fade has run out: the voice is silent */
     }
 }

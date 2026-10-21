@@ -32,6 +32,25 @@ static void *create(const char *data_dir)
 
 static void destroy(void *p) { free(p); }
 
+/* The choke groups: a trigger of voice i in group g (g > 0) silences the other sounding voices of the
+ * same group -- the hi-hat pairs. The fade lives in the voice itself (src/voice.c), so the choking voice's
+ * own hit is untouched: a fade on the master bus would take that down as well. Group 0 is "off": such a
+ * voice never chokes and is never choked. */
+static void choke_group(Synth *s, int idx)
+{
+    const int g = (int)(s->v[idx].p[P_CHOKE - P_VEL_TO_VOL] + 0.5f);
+    int j;
+    if (g <= 0) return;
+    for (j = 0; j < 12; j++) {
+        Voice *o = &s->v[j];
+        if (j == idx || !o->sounding) continue;
+        if ((int)(o->p[P_CHOKE - P_VEL_TO_VOL] + 0.5f) != g) continue;
+        o->choke_fading = 1;   /* the fade starts at full level and reaches silence in 5 ms */
+        o->choke_t = 0.0f;
+        o->choke_gain = 1.0f;
+    }
+}
+
 /* A note-on folds into the kit: voice ((note - base_note) mod 12), so every pad bank plays all twelve voices.
  * Note-off is ignored: a drum voice is a one-shot, not a gate. */
 static void midi(void *p, const uint8_t *m, int len)
@@ -43,6 +62,7 @@ static void midi(void *p, const uint8_t *m, int len)
         Voice *v = &s->v[idx];
         v->note = m[1];                       /* the played note: pitch_track's reference */
         sd_voice_note(v, (float)m[2] / 127.0f);
+        choke_group(s, idx);
     }
 }
 
@@ -152,6 +172,7 @@ static void set_param(void *p, const char *k, const char *val)
                     Voice *v = &s->v[s->sel];
                     v->note = s->base_note + s->sel;   /* the trigger plays the voice's own key */
                     sd_voice_note(v, 1.0f);             /* the trigger's velocity is full */
+                    choke_group(s, s->sel);              /* the choke groups: the same group goes silent */
                 }
             } else if (i == P_KIT_INIT) {
                 if (f > 0.5f) { patch_init_kit(s); s->rev++; }
@@ -243,30 +264,36 @@ static inline void fz_off(unsigned old) { (void)old; }
 #endif
 
 /* SAMPLE_ACCURATE: any frame count from 1 to 128 (wrapper/engine.h). The twelve voices sum into the master
- * bus, the soft clip x/(1+|x|) keeps them inside the int16 range and the gain sets the level. */
+ * bus (stereo: each voice carries its own pan), the soft clip x/(1+|x|) keeps them inside the int16 range
+ * and the gain sets the level. */
 static void render(void *p, int16_t *out, int frames)
 {
     const unsigned fpu = fz_on();
     Synth *s = p;
-    float acc[128];
+    float acc[256];
     int i, n;
     if (frames > 128) frames = 128;
     if (frames <= 0) { fz_off(fpu); return; }
-    for (i = 0; i < frames; i++) acc[i] = 0.0f;
+    for (i = 0; i < 2 * frames; i++) acc[i] = 0.0f;
     for (n = 0; n < 12; n++) {
         Voice *v = &s->v[n];
         if (!v->sounding) continue;   /* the one-shot is over: the voice costs nothing */
         sd_voice_render(v, acc, frames);
     }
     for (i = 0; i < frames; i++) {
-        float x = acc[i] * MASTER_GAIN;
-        int16_t y;
-        if (!isfinite(x)) { x = 0.0f; s->nan_count++; }   /* a NaN would be undefined behaviour here */
-        x = x / (1.0f + fabsf(x));                        /* the master soft clip */
-        if (x > 1.0f) x = 1.0f; else if (x < -1.0f) x = -1.0f;
-        y = (int16_t)lrintf(x * 32767.0f);
-        out[2 * i] = y;
-        out[2 * i + 1] = y;
+        float xl = acc[2 * i] * MASTER_GAIN;
+        float xr = acc[2 * i + 1] * MASTER_GAIN;
+        int16_t yl, yr;
+        if (!isfinite(xl)) { xl = 0.0f; s->nan_count++; }   /* a NaN would be undefined behaviour here */
+        if (!isfinite(xr)) { xr = 0.0f; s->nan_count++; }
+        xl = xl / (1.0f + fabsf(xl));                        /* the master soft clip */
+        xr = xr / (1.0f + fabsf(xr));
+        if (xl > 1.0f) xl = 1.0f; else if (xl < -1.0f) xl = -1.0f;
+        if (xr > 1.0f) xr = 1.0f; else if (xr < -1.0f) xr = -1.0f;
+        yl = (int16_t)lrintf(xl * 32767.0f);
+        yr = (int16_t)lrintf(xr * 32767.0f);
+        out[2 * i] = yl;
+        out[2 * i + 1] = yr;
     }
     fz_off(fpu);
 }
