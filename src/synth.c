@@ -1,5 +1,6 @@
 /* MPC Synthdrums -- the plugin engine (wrapper/engine.h): parameters, MIDI and audio for one instance.
- * The voices have no DSP yet: render() is silence (Task 3 adds the drum synthesis). */
+ * The twelve voices are drum synths (src/voice.c) and render() sums them into the master bus. */
+#include <math.h>
 #include <stdarg.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -8,15 +9,24 @@
 #include "engine.h"
 #include "synthdrums.h"
 
+/* The master bus's gain: one init voice at velocity 127 peaks at about -6 dBFS (the soft clip below keeps
+ * the sum of twelve voices inside the int16 range). */
+#define MASTER_GAIN 1.0f
+
 static float clampf(float v, float lo, float hi) { return v < lo ? lo : v > hi ? hi : v; }
 
 static void *create(const char *data_dir)
 {
     Synth *s = calloc(1, sizeof *s);
+    int i;
     (void)data_dir;
     if (!s) return NULL;
     patch_init_kit(s);
     s->base_note = (int)PDEF[P_BASE_NOTE].def;   /* device-level: a fresh kit starts at C1 (36) */
+    for (i = 0; i < 12; i++) {   /* the voices know their own number: their key is base_note + index */
+        s->v[i].index = i;
+        s->v[i].base_note = s->base_note;
+    }
     return s;
 }
 
@@ -30,7 +40,9 @@ static void midi(void *p, const uint8_t *m, int len)
     if (len < 3) return;
     if ((m[0] & 0xF0) == 0x90 && m[2]) {
         const int idx = ((m[1] - s->base_note) % 12 + 12) % 12;
-        s->v[idx].sounding = 1;   /* Task 3 scales the hit by m[2] */
+        Voice *v = &s->v[idx];
+        v->note = m[1];                       /* the played note: pitch_track's reference */
+        sd_voice_note(v, (float)m[2] / 127.0f);
     }
 }
 
@@ -128,13 +140,19 @@ static void set_param(void *p, const char *k, const char *val)
                 const int idx = (int)(f + 0.5f);   /* an option's index, 0-based */
                 if (idx != s->sel) { s->sel = idx; s->rev++; }
             } else if (i == P_BASE_NOTE) {
+                int k;
                 s->base_note = (int)(f + 0.5f);
+                for (k = 0; k < 12; k++) s->v[k].base_note = s->base_note;   /* the voices' own key moves with it */
             }
             break;
         case PK_TRIG:
             if (i == P_TRIG) {
                 /* no edge memory: the wrapper springs the key back, so every press is a fresh 1 -> 0 */
-                if (f > 0.5f) s->v[s->sel].sounding = 1;
+                if (f > 0.5f) {
+                    Voice *v = &s->v[s->sel];
+                    v->note = s->base_note + s->sel;   /* the trigger plays the voice's own key */
+                    sd_voice_note(v, 1.0f);             /* the trigger's velocity is full */
+                }
             } else if (i == P_KIT_INIT) {
                 if (f > 0.5f) { patch_init_kit(s); s->rev++; }
             }
@@ -224,13 +242,32 @@ static inline unsigned fz_on(void) { return 0; }
 static inline void fz_off(unsigned old) { (void)old; }
 #endif
 
-/* SAMPLE_ACCURATE: any frame count from 1 to 128 (wrapper/engine.h). Silence until Task 3's DSP. */
+/* SAMPLE_ACCURATE: any frame count from 1 to 128 (wrapper/engine.h). The twelve voices sum into the master
+ * bus, the soft clip x/(1+|x|) keeps them inside the int16 range and the gain sets the level. */
 static void render(void *p, int16_t *out, int frames)
 {
     const unsigned fpu = fz_on();
-    (void)p;
+    Synth *s = p;
+    float acc[128];
+    int i, n;
     if (frames > 128) frames = 128;
-    if (frames > 0) memset(out, 0, sizeof(int16_t) * 2 * (size_t)frames);
+    if (frames <= 0) { fz_off(fpu); return; }
+    for (i = 0; i < frames; i++) acc[i] = 0.0f;
+    for (n = 0; n < 12; n++) {
+        Voice *v = &s->v[n];
+        if (!v->sounding) continue;   /* the one-shot is over: the voice costs nothing */
+        sd_voice_render(v, acc, frames);
+    }
+    for (i = 0; i < frames; i++) {
+        float x = acc[i] * MASTER_GAIN;
+        int16_t y;
+        if (!isfinite(x)) { x = 0.0f; s->nan_count++; }   /* a NaN would be undefined behaviour here */
+        x = x / (1.0f + fabsf(x));                        /* the master soft clip */
+        if (x > 1.0f) x = 1.0f; else if (x < -1.0f) x = -1.0f;
+        y = (int16_t)lrintf(x * 32767.0f);
+        out[2 * i] = y;
+        out[2 * i + 1] = y;
+    }
     fz_off(fpu);
 }
 

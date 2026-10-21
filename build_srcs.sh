@@ -1,1 +1,1 @@
-SRCS="src/synth.c src/patches.c"
+SRCS="src/synth.c src/patches.c src/voice.c"
