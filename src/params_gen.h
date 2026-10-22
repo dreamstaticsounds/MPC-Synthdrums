@@ -270,7 +270,7 @@ static const short E2P[EDIT_PARAMS] = {
     85,
 };
 
-_Static_assert(0 == 0 && 34 == 34, "P_PITCH..P_CHOKE must keep VST indices 0..34");
+_Static_assert(P_PITCH == 0 && P_CHOKE == 34, "P_PITCH..P_CHOKE must keep VST indices 0..34");
 
 /* the init patch: PDEF's defaults in p[] edit order (patch_init_voice copies it) */
 static const float INIT_PATCH[EDIT_PARAMS] = {0, 127, 0, 0, 0, 0, 0, 64, 0, 0, 0, 0, 0, 64, 0, 64, 0, 64, 64, 127, 64, 0, 0, 0, 127, 0, 64, 0, 64, 0, 64, 0, 100, 0, 0, 0, 0, 0, 64, 0, 64, 0, 64, 64, 0, 64, 0, 0, 0, 0, 64, 64, 64, 64, 0, 64, 0, 6, 1, 0, 0, 0, 64, 0, 6, 1, 0, 0, 0, 64, 0, 6, 1, 0, 0, 0};

@@ -147,6 +147,10 @@ static void deserialize(Synth *s, const char *text)
             }
         }
     }
+    /* the loaded base note must reach the voices' own keys too: note folding uses s->base_note while the
+     * oscillator key uses v->base_note, so a custom base note that only lands in s-> tunes every voice off
+     * (1.0.0 had this bug; the set_param path already propagates). */
+    for (int i = 0; i < 12; i++) s->v[i].base_note = s->base_note;
     s->rev++;   /* a state load changes what the screen shows */
 }
 

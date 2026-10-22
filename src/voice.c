@@ -354,6 +354,9 @@ void sd_voice_render(Voice *v, float *bus, int frames, float bpm)
      * its gate the same knob), the comb's delay (0.5..30 ms) and the gated reverb's mix. */
     const float ring01 = PP(P_RING_MOD) * (1.0f / 127.0f);
     const float ring_hz = powf(8000.0f, ring01);          /* 1 Hz at 0 .. 8 kHz at 127 */
+    /* design §8: the knob is the carrier frequency only — once engaged the ring is fully wet (Koala
+     * "slide up for faster modulation"), so the depth is 1 above 0, not a blend that fades in. */
+    const float ring_wet = ring01 > 0.0f ? 1.0f : 0.0f;
     const float fm_g = PP(P_FM_INDEX) * (1.0f / 127.0f);
     const float fm_idx = 8.0f * fm_g;
     const float comb01 = PP(P_COMB) * (1.0f / 127.0f);
@@ -465,7 +468,7 @@ void sd_voice_render(Voice *v, float *bus, int frames, float bpm)
 
         /* The FX row: ring mod, operator FM, comb, gated reverb — each exact bypass at 0. The reverb's
          * gate is per-hit: its age advances here and starts at 0 with every trigger. */
-        out = fx_ring(&v->ring, out, ring_hz, ring01);
+        out = fx_ring(&v->ring, out, ring_hz, ring_wet);
         out = fx_fm(&v->fm, out, fm_idx, fm_g);
         out = fx_comb(&v->comb, out, comb_ms, 0.75f, comb01);
         v->gverb_t += DT;

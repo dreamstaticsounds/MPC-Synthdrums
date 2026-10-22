@@ -217,8 +217,10 @@ def header():
     for i in _edit:
         L.append("    %d," % i)
     L += ["};", "",
-          "_Static_assert(%d == 0 && %d == 34, \"P_PITCH..P_CHOKE must keep VST indices 0..34\");"
-          % (_edit[0], _edit[34]), "",
+          # symbolic names, not the index values: a compiler-checked assert. (Emitting the literal
+          # indices would make it tautological -- 0 == 0 && 34 == 34 -- able to catch nothing.)
+          "_Static_assert(%s == 0 && %s == 34, \"P_PITCH..P_CHOKE must keep VST indices 0..34\");"
+          % (cname(PARAMS[_edit[0]]["key"]), cname(PARAMS[_edit[34]]["key"])), "",
           "/* the init patch: PDEF's defaults in p[] edit order (patch_init_voice copies it) */",
           "static const float INIT_PATCH[EDIT_PARAMS] = {%s};" % ", ".join("%g" % _edit_def[k] for k in EDIT_KEYS),
           "",

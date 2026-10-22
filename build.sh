@@ -29,9 +29,14 @@ SHADOW_ART="$PWD/build/tools/shadow_art" \
   python3 "$MPC_VST/tools/gen_vst.py" vst.json 2>&1 | grep -v -e "TOUCH" -e "EDGE" || true
 [ -f build/params.h ] && [ -d "build/skin/$NAME/Plugin Skins" ]
 python3 tools/skin.py "build/skin/$NAME/Plugin Skins"          # the six pages
-# touch boxes, edges, Q-Links, as MPC loads it -- popup option rows are named "popup <key> <word>": an open
-# list covers the page and takes the touch by design (docs/NOTES.md), so those TOUCH lines are not findings
-findings=$(python3 "$MPC_VST/tools/skin_check.py" "build/skin/$NAME" | grep -v "popup lfo" || true)
+# touch boxes, edges, Q-Links, as MPC loads it. skin_check exits 1 whenever it reports anything, and the
+# by-design popup TOUCH lines are among them, so exit status alone can't gate. Two real guards instead:
+# a crash (traceback on stderr) must fail loudly, and only the by-design TOUCH-on-a-popup-row lines are
+# exempt -- any other finding on a popup (a missing OPTS option, an EDGE overrun) still fails.
+sc_err=$(mktemp)
+findings=$(python3 "$MPC_VST/tools/skin_check.py" "build/skin/$NAME" 2>"$sc_err" | grep -v "TOUCH.*popup lfo" || true)
+if [ -s "$sc_err" ]; then cat "$sc_err" >&2; rm -f "$sc_err"; echo "build.sh: skin_check crashed" >&2; exit 1; fi
+rm -f "$sc_err"
 if [ -n "$findings" ]; then echo "$findings" >&2; echo "build.sh: skin_check found problems" >&2; exit 1; fi
 
 TGT="-target arm-linux-gnueabihf.2.31 -mcpu=generic+v7a+vfp3d16-d32-neon+thumb2 -ffp-contract=off"

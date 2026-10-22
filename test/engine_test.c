@@ -246,6 +246,10 @@ int main(void)
     CHECK(!strcmp(a, c), "state round trip");
     for (int v = 0; v < 12; v++) { char k[32]; snprintf(k, sizeof k, "%d", 10 + v); sp(y, "voice", v);
       E->get_param(y, "osc_decay", b, sizeof b); CHECK(!strcmp(b, k), "voice idx %d survived the chunk", v); }
+    /* the saved base note (40) must reach the voices' own keys, not just the device level: folding keys
+     * off s->base_note while the oscillator keys off v->base_note would tune every voice off. */
+    { int ok = 1; for (int v = 0; v < 12; v++) if (((Synth *)y)->v[v].base_note != 40) ok = 0;
+      CHECK(ok, "loaded base note propagated to all 12 voices (%d)", ((Synth *)y)->v[5].base_note); }
     /* Task 1: the edit-order mapping -- the first 35 params keep their 1.0.0 positions */
     {
         int k, ok = 1;
@@ -494,6 +498,13 @@ int main(void)
     note(x, 36, 127); cap(x, A, 128);
     sp(x, "ring_mod", 127); note(x, 36, 127); cap(x, B, 128);
     CHECK(capdiff(A, B, 128) > 1e-3, "ring engages");
+    /* the knob is frequency only (design §8 "fully wet when engaged"): even the lowest engaged value
+     * multiplies by the carrier outright. A 1 Hz carrier barely rises inside one block, so a full-wet
+     * ring nearly nulls it (rms ~0.34x dry: a 1 ms engage ramp off dry, then |sin|~0.02); the old
+     * blend law g=k/127 would have left it ~0.99x dry. The 0.6 threshold sits ~3x from both. */
+    sp(x, "ring_mod", 1); note(x, 36, 127); cap(x, B, 128);
+    CHECK(buf_rms(B, 128) < buf_rms(A, 128) * 0.6f, "ring fully wet at 1 (%.4f vs dry %.4f)",
+          buf_rms(B, 128), buf_rms(A, 128));
     sp(x, "ring_mod", 0); sp(x, "fm_index", 127); note(x, 36, 127); cap(x, B, 128);
     CHECK(capdiff(A, B, 128) > 1e-3, "fm engages");
     sp(x, "fm_index", 0); sp(x, "comb", 127); note(x, 36, 127); cap(x, B, 128);
