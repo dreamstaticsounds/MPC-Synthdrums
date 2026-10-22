@@ -13,9 +13,9 @@
  *  - the noise: a white LFSR -> the colour's tilt -> its own amp env -> its own biquad -> the osc/noise mix
  *  - the filters: each branch (osc, noise) has its own resonant 12 dB/oct biquad (LP/BP/HP) and its own
  *    one-shot envelope; the mix happens after both
- *  - the effects: the stutter gate -> the waveshaper -> the three peaking EQ bands -> ring mod, FM, comb,
- *    gated reverb -> the level and the pan -> the stereo delay -> the choke fade (the choke goes last so
- *    it cuts the delay's feedback tails too)
+ *  - the effects: the stutter gate -> the waveshaper -> the tone one-pole -> the three peaking EQ bands
+ *    -> ring mod, FM, comb -> the level and the pan -> the stereo delay -> the gated verb (BA3, 1.0.2)
+ *    -> the choke fade (the choke goes last so it cuts the delay's feedback tails too)
  *  - the velocity routings: m = 1 - depth/127 + (depth/127)*vel on the amp, the two sources and the penv depth */
 #include <math.h>
 #include <stdint.h>
@@ -188,8 +188,10 @@ void sd_voice_reset(Voice *v)
     v->ring.g = 0.0f;
     v->fm.ph = 0.0f;
     memset(&v->comb, 0, sizeof v->comb);
-    memset(&v->gv, 0, sizeof v->gv);
-    v->gverb_t = 0.0f;
+    /* The verb: verb_reset zeroes the rings and state AND sets the figure's coefficients (computed
+     * identically every hit, so the reset is bit-exact like dly_reset's). */
+    verb_reset(&v->verb);
+    v->verb_quiet_t = 0.0f;
     /* the stereo delay: fully reinitialized at every hit (the doubler's heads return to their starting
      * positions), so two hits with the same settings are bit-identical */
     dly_reset(&v->dly);
@@ -405,6 +407,7 @@ void sd_voice_render(Voice *v, float *bus, int frames, float bpm)
     const float dly_fb = PP(P_DELAY_FB) * (0.95f / 127.0f);
     const float dly_wet = PP(P_DELAY_WET) * (1.0f / 127.0f);
     float dly_in_peak = 0.0f, dly_wet_peak = 0.0f;   /* the block's peaks: the tail-liveness clock */
+    float verb_in_peak = 0.0f, verb_wet_peak = 0.0f; /* the verb's own tail-liveness peaks (1.0.2) */
     /* The output stage: the pan (equal power: -64 = hard left, 0 = centre, +63 = hard right) and the
      * level (0 .. ~1.4x, the init patch's 100 is a little over unity). The "out_sel" knob is state-only:
      * the MPC sums its three output buses to the main pair, so all three selections sound the same. */
@@ -502,19 +505,16 @@ void sd_voice_render(Voice *v, float *bus, int frames, float bpm)
         out = eq_step(&v->eq[1], out);
         out = eq_step(&v->eq[2], out);
 
-        /* The FX row: ring mod, operator FM, comb, gated reverb — each exact bypass at 0. The FM
-         * operator is gated by the osc amp env (g * v->amp): it dies with the envelope, so a hit that
-         * has run out leaves no 150 Hz drone behind (1.0.2). The reverb's
-         * gate is per-hit: its age advances here and starts at 0 with every trigger. */
+        /* The FX row: ring mod, operator FM, comb — each exact bypass at 0. The FM operator is gated
+         * by the osc amp env (g * v->amp): it dies with the envelope, so a hit that has run out leaves
+         * no 150 Hz drone behind (1.0.2). The gated verb left this row: it now runs after the delay. */
         out = fx_ring(&v->ring, out, ring_hz, ring_wet);
         out = fx_fm(&v->fm, out, fm_idx, fm_g * v->amp);
         out = fx_comb(&v->comb, out, comb_ms, 0.75f, comb01);
-        v->gverb_t += DT;
-        out = fx_gverb(&v->gv, out, gverb_m, v->gverb_t);
 
         /* The level and the pan: the voice's mono signal becomes stereo here (spec §8: everything up
-         * to and including the gated reverb is mono; the delay runs true stereo after the pan, its wet
-         * independent of the pan). */
+         * to and including the comb is mono; the delay runs true stereo after the pan, its wet
+         * independent of the pan; the verb follows the delay in stereo). */
         out *= vol;
         ol = out * pan_l;
         orr = out * pan_r;
@@ -528,6 +528,18 @@ void sd_voice_render(Voice *v, float *bus, int frames, float bpm)
             dly_step(&v->dly, ol, orr, dly_l_ms, dly_r_ms, dly_det, dly_fb, dly_wet, &ol, &orr);
             if (fabsf(ol) > dly_wet_peak) dly_wet_peak = fabsf(ol);
             if (fabsf(orr) > dly_wet_peak) dly_wet_peak = fabsf(orr);
+        }
+
+        /* The gated verb (1.0.2): Bright Ambience 3 after the delay, its input the post-delay stereo
+         * signal (design section 7). wet 0 = the module is skipped entirely. Its input and wet peaks
+         * feed the verb's own tail-liveness clock below — the tap keeps sounding long after the dry
+         * has died, and the ring empties on its own. */
+        if (gverb_m > 0.0f) {
+            if (fabsf(ol) > verb_in_peak) verb_in_peak = fabsf(ol);
+            if (fabsf(orr) > verb_in_peak) verb_in_peak = fabsf(orr);
+            verb_step(&v->verb, ol, orr, gverb_m, &ol, &orr);
+            if (fabsf(ol) > verb_wet_peak) verb_wet_peak = fabsf(ol);
+            if (fabsf(orr) > verb_wet_peak) verb_wet_peak = fabsf(orr);
         }
 
         /* The choke fade AFTER the delay: it lives in the voice's own output path (never in the master
@@ -560,6 +572,11 @@ void sd_voice_render(Voice *v, float *bus, int frames, float bpm)
     if (dly_wet > 0.0f && (dly_in_peak > ENV_FLOOR || dly_wet_peak > ENV_FLOOR)) v->dly_quiet_t = 0.0f;
     else if (dly_wet > 0.0f) v->dly_quiet_t += (float)frames * DT;
 
+    /* The verb's tail-liveness clock, same pattern: any block with energy into or out of the verb
+     * resets it. VERB_HORIZON_S covers the ring's decay past the last energy. */
+    if (gverb_m > 0.0f && (verb_in_peak > ENV_FLOOR || verb_wet_peak > ENV_FLOOR)) v->verb_quiet_t = 0.0f;
+    else if (gverb_m > 0.0f) v->verb_quiet_t += (float)frames * DT;
+
     /* The one-shot is over when nothing audible is left: the voice drops out of the 12-voice loop. */
     {
         const int amp_dead = (v->amp < ENV_FLOOR);
@@ -567,7 +584,8 @@ void sd_voice_render(Voice *v, float *bus, int frames, float bpm)
         const int src_dead = (amp_dead || osc_gain <= 0.0f) && (noise_dead || noise_gain <= 0.0f);
         const float horizon = 0.001f * (dly_l_ms > dly_r_ms ? dly_l_ms : dly_r_ms) + 0.02f;
         const int delay_alive = (dly_wet > 0.0f) && (v->dly_quiet_t <= horizon);
-        if (src_dead && !delay_alive) v->sounding = 0;
+        const int verb_alive = (gverb_m > 0.0f) && (v->verb_quiet_t <= VERB_HORIZON_S);
+        if (src_dead && !delay_alive && !verb_alive) v->sounding = 0;
         if (v->choke_gain <= 0.0f) v->sounding = 0;   /* the choke fade has run out: the voice is silent */
     }
 }

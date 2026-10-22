@@ -528,16 +528,32 @@ int main(void)
     sp(x, "eq3_freq", 127); E->get_param(x, "eq3_freq_display", b, sizeof b); CHECK(!strcmp(b, "12.0 kHz"), "eq3 display hi (%s)", b);
     sp(x, "pitch", 0);   /* restore: the choke click test's step limit assumes the 65 Hz base tone */
 
-    /* ---- Task 7: ring mod, operator FM, comb, gated reverb ---- */
+    /* ---- Task 7: ring mod, operator FM, comb (the FX row) + the gated verb (BA3) ---- */
     /* every module is exact bypass at 0 (direct unit calls on fresh state) */
     {
-        RingSt r; FmSt f; CombSt cb; GVerbSt gv;
+        RingSt r; FmSt f; CombSt cb; VerbSt vb;
         float xc = 0.5f;
-        memset(&r, 0, sizeof r); memset(&f, 0, sizeof f); memset(&cb, 0, sizeof cb); memset(&gv, 0, sizeof gv);
+        memset(&r, 0, sizeof r); memset(&f, 0, sizeof f); memset(&cb, 0, sizeof cb);
         CHECK(fx_ring(&r, xc, 8000.0f, 0.0f) == xc, "ring bypass at 0");
         CHECK(fx_fm(&f, xc, 8.0f, 0.0f) == xc, "fm bypass at 0");
         CHECK(fx_comb(&cb, xc, 30.0f, 0.75f, 0.0f) == xc, "comb bypass at 0");
-        CHECK(fx_gverb(&gv, xc, 0.0f, 0.0f) == xc, "gverb bypass at 0");
+        /* the verb: wet 0 is exact bypass, then each channel's tap lands exactly at its prime */
+        {
+            float u_ol = 0.0f, u_orr = 0.0f;
+            int i, ar = -1, al = -1;
+            verb_reset(&vb);
+            verb_step(&vb, xc, 0.0f, 0.0f, &u_ol, &u_orr);
+            CHECK(u_ol == xc && u_orr == 0.0f, "verb bypass at wet 0");
+            verb_reset(&vb);
+            verb_step(&vb, 1.0f, 1.0f, 1.0f, &u_ol, &u_orr);    /* the impulse; wet 1 = taps only */
+            for (i = 1; i <= BA3_TAP_L + 2; i++) {
+                verb_step(&vb, 0.0f, 0.0f, 1.0f, &u_ol, &u_orr);
+                if (ar < 0 && u_orr != 0.0f) ar = i;
+                if (al < 0 && u_ol != 0.0f) al = i;
+            }
+            CHECK(al == BA3_TAP_L, "the L tap is exactly primeL[140] (%d)", al);
+            CHECK(ar == BA3_TAP_R, "the R tap is exactly primeR[140] (%d)", ar);
+        }
     }
     /* engaged: each knob changes the voice (cap: one block, 128 frames) */
     sp(x, "src_mix", 0); sp(x, "osc_decay", 100);
@@ -565,14 +581,23 @@ int main(void)
     sp(x, "src_mix", 0); sp(x, "noise_decay", 0); sp(x, "osc_decay", 0); sp(x, "fm_index", 0);
     sp(x, "fm_index", 0); sp(x, "comb", 127); note(x, 36, 127); cap(x, B, 128);
     CHECK(capdiff(A, B, 128) > 1e-3, "comb engages");
-    /* the gate closes the tail: full wet + a sustained input — the tail must die when the gate shuts
-     * (m = 1 removes the dry entirely, so what remains after the gate is nothing but the gated wet) */
-    sp(x, "comb", 0); sp(x, "osc_decay", 127); sp(x, "gverb", 127);
-    note(x, 36, 127); Stat gv_mid = run_from(x, 12, 10);   /* the combs' first reflections (29.7 ms) arrived */
-    CHECK(gv_mid.nan == 0 && gv_mid.peak < 32767 && gv_mid.rms > 0.01, "gverb wet audible (%.4f)", gv_mid.rms);
-    Stat gv_late = run_from(x, 120, 20);                   /* ~410 ms: the gate has shut */
-    CHECK(gv_late.rms < gv_mid.rms * 0.05, "gated reverb tail is gated (%.4f vs %.4f)", gv_late.rms, gv_mid.rms);
-    sp(x, "gverb", 0);
+    /* the verb tail (1.0.2): full wet is dry-free before the ~141 ms taps, alive after them, and
+     * dead once the ring empties -- and the voice drops with it (no per-hit gate: liveness clocks it) */
+    sp(x, "comb", 0); sp(x, "gverb", 127); sp(x, "delay_wet", 0);
+    sp(x, "src_mix", 127); sp(x, "noise_colour", 127); sp(x, "noise_decay", 30);  /* bright; dies ~108 ms */
+    note(x, 36, 127); Stat vb_pre = run_from(x, 0, 40);    /* 0..116 ms: before both taps */
+    CHECK(vb_pre.nan == 0 && vb_pre.peak < 32767 && vb_pre.rms < 1e-5, "verb full wet: silent before the taps (%.6f)", vb_pre.rms);
+    note(x, 36, 127); Stat vb_tap = run_from(x, 55, 30);   /* 159.6..246.7 ms: taps + ring */
+    CHECK(vb_tap.nan == 0 && vb_tap.peak < 32767 && vb_tap.rms > 1e-4, "verb tap + ring audible (%.6f)", vb_tap.rms);
+    note(x, 36, 127); Stat vb_late = run_from(x, 360, 40); /* ~1.04..1.16 s: long past the ring */
+    CHECK(vb_late.peak < 300, "verb tail dies (%d)", (int)vb_late.peak);
+    CHECK(((Synth *)x)->v[0].sounding == 0, "voice drops after the verb tail");
+    /* determinism past the tap: the rings reset per hit */
+    sp(x, "gverb", 64);
+    note(x, 36, 127); Stat vdr1 = run_from(x, 120, 40);
+    note(x, 36, 127); Stat vdr2 = run_from(x, 120, 40);
+    CHECK(fabs(vdr1.rms - vdr2.rms) < 1e-9, "verb past the tap is bit-identical (%.9f vs %.9f)", vdr1.rms, vdr2.rms);
+    sp(x, "gverb", 0); sp(x, "src_mix", 0); sp(x, "noise_colour", 0); sp(x, "noise_decay", 0);
     /* the displays */
     sp(x, "ring_mod", 127); E->get_param(x, "ring_mod_display", b, sizeof b); CHECK(!strcmp(b, "8.0 kHz"), "ring display (%s)", b);
     sp(x, "comb", 127); E->get_param(x, "comb_display", b, sizeof b); CHECK(!strcmp(b, "30.0 ms"), "comb display (%s)", b);

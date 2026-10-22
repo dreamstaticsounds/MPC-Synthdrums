@@ -1,9 +1,10 @@
-/* MPC Synthdrums -- the voice's effects: the stutter gate, the waveshaper, the peaking EQ and the FX row
- * (ring mod, operator FM, comb, gated reverb).
+/* MPC Synthdrums -- the voice's effects: the stutter gate, the waveshaper (+ tone), the peaking EQ and
+ * the FX row (ring mod, operator FM, comb). The gated verb moved to its own vendored module (1.0.2):
+ * third_party/airwindows-brightambience3/brightambience3.c, after the delay.
  *
  * They sit between the voice's filters and its pan, in chain order:
  *
- *   sources -> filters -> stutter -> dist -> tone -> EQ x3 -> ring -> FM (gated by the osc amp env) -> comb -> gated reverb -> vol/pan
+ *   sources -> filters -> stutter -> dist -> tone -> EQ x3 -> ring -> FM (gated by the osc amp env) -> comb -> vol/pan -> delay -> gated verb
  *
  * Stutter: a square gate whose rate the "length" knob sets (0.5 .. 40 Hz, an exponential sweep: the
  * roll/echo-machine feel) and whose depth the "strength" knob sets (0 = off, exactly; 1 = the gate
@@ -164,56 +165,9 @@ float fx_comb(CombSt *cb, float x, float ms, float fb, float g)
     while (rp < 0.0f) rp += (float)COMB_BUF;
     i0 = (int)rp;
     s = cb->buf[i0] + (cb->buf[(i0 + 1) % COMB_BUF] - cb->buf[i0]) * (rp - (float)i0);
+    _Static_assert(1323 + 1 <= COMB_BUF, "the comb buffer covers 30 ms plus the interp read");
     cb->buf[cb->w] = x + fb * s;
     cb->w = (cb->w + 1) % COMB_BUF;
     return s;
 }
 
-/* Gated reverb: a Schroeder bank (4 combs at 29.7/37.1/41.1/43.7 ms, fb 0.80, then 2 allpass at
- * 5.0/1.7 ms, g 0.7) behind a per-hit gate: open for GVERB_GATE_S from the hit, then a 5 ms fade —
- * the wet stops dead (the classic gated look). The dry always passes (x*(1-m)); m == 0 is exact
- * bypass and skips the whole bank, and once the gate has shut the bank is skipped too (the output is
- * dry-only then; a retrigger resets it). */
-float fx_gverb(GVerbSt *gv, float x, float m, float t_hit)
-{
-    static const float c_ms[4] = { 29.7f, 37.1f, 41.1f, 43.7f };   /* documented for the reader only */
-    static const int c_n[4] = { 1310, 1636, 1812, 1927 };          /* ceil(ms*44.1); each < 2048 */
-    static const int a_n[2] = { 220, 75 };                         /* 5.0 / 1.7 ms; each < 224 */
-    float wet;
-    int j;
-
-    /* The struct's buffers must cover their delays (5.0 ms is 221 samples — 128 was too small). */
-    _Static_assert(221 <= 224, "the allpass buffers cover their delays");
-    _Static_assert(1927 <= 2048, "the comb buffers cover their delays");
-    _Static_assert(1323 + 1 <= COMB_BUF, "the comb buffer covers 30 ms plus the interp read");
-    (void)c_ms;
-    if (m == 0.0f) return x;
-    if (t_hit >= GVERB_GATE_S + 0.005f) return x * (1.0f - m);   /* the gate has shut: the wet is 0 */
-
-    wet = 0.0f;
-    for (j = 0; j < 4; j++) {
-        const int D = c_n[j], w = gv->ci[j];
-        int rp = w - D;
-        float y;
-        if (rp < 0) rp += D;
-        y = gv->c[j][rp];
-        gv->c[j][w] = x + 0.80f * y;
-        gv->ci[j] = (w + 1) % D;
-        wet += y;
-    }
-    wet *= 0.25f;
-    for (j = 0; j < 2; j++) {
-        const int D = a_n[j], w = gv->ai[j];
-        const float y = -0.7f * wet + gv->a[j][w];   /* buf[w] holds what was written D samples ago */
-        gv->a[j][w] = wet + 0.7f * y;
-        gv->ai[j] = (w + 1) % D;
-        wet = y;
-    }
-
-    /* The gate: 1 while open, a 5 ms linear fade, then 0 (the tail is cut dead). */
-    {
-        float gate = 1.0f;
-        if (t_hit > GVERB_GATE_S) gate = 1.0f - (t_hit - GVERB_GATE_S) * (1.0f / 0.005f);
-        return x * (1.0f - m) + wet * (m * gate);
-    }
-}

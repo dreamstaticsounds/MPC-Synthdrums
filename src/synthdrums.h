@@ -83,9 +83,24 @@ float fx_comb(CombSt *cb, float x, float ms, float fb, float g);
 /* Gated reverb: a Schroeder bank (4 combs + 2 allpass) behind a per-hit gate — the gate is open for
  * GATE_S from the hit, then fades out over 5 ms, so the tail stops dead (the classic gated look). The
  * gate's age t_hit comes from the voice's own per-hit timer. */
-#define GVERB_GATE_S 0.2f
-typedef struct { float c[4][2048], a[2][224]; int ci[4], ai[2]; } GVerbSt;   /* combs < 2048; allpass: 5.0 ms = 221 < 224 */
-float fx_gverb(GVerbSt *gv, float x, float m, float t_hit);
+/* The gated verb (1.0.2): Airwindows Bright Ambience 3, vendored (third_party/airwindows-
+ * brightambience3/) with three knobs baked — A = 0.13 (start 140), B = 0 (length 1), C = 0
+ * (feedback 0) — so what remains is ONE prime tap per channel through the vendor's 1 kHz "figure"
+ * resonator, wet blended by the GVERB knob. The taps are the vendor's own prime table entries
+ * (it deliberately taps a different prime per channel: stereo decorrelation). Wet 0 skips the
+ * module entirely (exact bypass). No per-hit gate: the tail's liveness is clocked in voice.c. */
+#define BA3_TAP_L 6247                 /* primeL[140], the baked A=0.13 tap, ~141.7 ms */
+#define BA3_TAP_R 6229                 /* primeR[140], ~141.2 ms */
+#define VERB_HORIZON_S 0.6f            /* the voice may live this long past the verb's last energy:
+                                        * the ~142 ms tap plus the figure ring's decay */
+typedef struct {
+    float l[BA3_TAP_L], r[BA3_TAP_R];  /* the two rings, exactly one tap long each */
+    int wl, wr;                        /* the write heads (read-before-write: a pure tap delay) */
+    float fy1, fy2, fr1, fr2;          /* the figure resonator's state: L pair, R pair */
+    float b2, b4, b5, b6;              /* the figure's coefficients (computed by verb_reset) */
+} VerbSt;
+void verb_reset(VerbSt *v);            /* zeroes state + rings, sets the figure's coefficients */
+void verb_step(VerbSt *v, float inl, float inr, float wet, float *ol, float *orr);
 
 /* The stereo delay: Airwindows Doublelay, vendored and adapted (MIT License:
  * third_party/airwindows-doublelay/LICENSE; the source's header names the upstream file). One shared
@@ -166,10 +181,11 @@ typedef struct {
     RingSt ring;            /* the FX row's states, in chain order after the EQ */
     FmSt fm;
     CombSt comb;
-    GVerbSt gv;
-    float gverb_t;          /* the gated reverb's per-hit gate age, in seconds */
-    DlySt dly;              /* the stereo delay, last in the chain -- after the pan, so the wet tails
-                             * are independent of the voice's pan (spec §8) */
+    VerbSt verb;            /* the gated verb (BA3, 1.0.2): after the delay, its input the post-delay
+                             * stereo signal */
+    float verb_quiet_t;     /* the verb's tail-liveness clock, in seconds */
+    DlySt dly;              /* the stereo delay -- after the pan, so the wet tails are independent of
+                             * the voice's pan (spec §8); the gated verb follows it (1.0.2) */
     float dly_quiet_t;      /* the delay's tail-liveness clock: quiet seconds since the last energy */
     LFO lfo[3];             /* the three LFOs (Task 9): continuous per-voice state, retrig OFF runs on */
     float choke_gain;       /* the choke fade's multiplier: 1 = free, 0 = silenced */
