@@ -138,6 +138,37 @@ PARAMS = [
     P("delay_wet", "DELAY WET", 0, 127, 0),
 ]
 
+# The three LFOs (spec §6): per-voice, bidirectional depth, free-run or tempo-synced, retriggered with
+# the hit by default (drum-natural). Append order: lfo1_* then lfo2_* then lfo3_* (the append-only rule);
+# the destination's option list is the DEST list, patched in below once the whole list is known.
+_lfo = []
+for _n in (1, 2, 3):
+    _lfo += [
+        P("lfo%d_rate" % _n, "LFO%d RATE" % _n, 0, 127, 64, dynamic_display=True),
+        P("lfo%d_sync" % _n, "LFO%d SYNC" % _n, d=0, opts=["OFF", "ON"]),
+        P("lfo%d_div" % _n, "LFO%d DIV" % _n, d=6,
+          opts=["1/32", "1/16T", "1/16", "1/8T", "1/8", "1/4T", "1/4", "1/2", "1 bar", "1/8D", "1/4D",
+                "1/2D"]),
+        P("lfo%d_retrig" % _n, "LFO%d RETRIG" % _n, d=1, opts=["OFF", "ON"]),
+        P("lfo%d_wave" % _n, "LFO%d WAVE" % _n, d=0,
+          opts=["sin", "tri", "saw up", "saw dwn", "sqr", "s&h", "rnd"]),
+        P("lfo%d_dest" % _n, "LFO%d DEST" % _n, d=0, opts=["x"]),   # the DEST list is patched in below
+        P("lfo%d_depth" % _n, "LFO%d DEPTH" % _n, -63, 63, 0),
+    ]
+PARAMS += _lfo
+
+# The LFO destinations (DEST): every continuous voice parameter (PK_PATCH without options -- the enums
+# are excluded per spec), in panel order. The labels are what the MPC shows in the dest option list;
+# params_gen.h emits DEST_KEYS (the engine's lookup) and DEST2P (the VST enum index per dest).
+_dests = [p for p in PARAMS if p["kind"] == "PK_PATCH" and not p.get("options")]
+assert len({p["name"] for p in _dests}) == len(_dests), "DEST labels must be unique"
+DEST_LABELS = [p["name"] for p in _dests]
+DEST_KEYS = [p["key"] for p in _dests]
+for p in PARAMS:
+    if p["key"].startswith("lfo") and p["key"].endswith("_dest"):
+        p["options"] = list(DEST_LABELS)
+        p["min"], p["max"] = 0, len(DEST_LABELS) - 1
+
 for p in PARAMS:   # momentary keys: a plain 0..1 with no int display
     if p.get("momentary"):
         p["min"], p["max"] = 0, 1
@@ -196,13 +227,24 @@ def header():
         L.append('    {"%s", %s, %d, %d, %g, %d},' % (p["key"], p["kind"], p["min"], p["max"], p["default"],
                                                       len(p.get("options") or [])))
     L += ["};", ""]
-    for name, lst in [("FILTER_MODE", FILTER_MODES), ("OUT_SEL", OUT_SELS), ("CHOKE", CHOKE_NAMES),
-                      ("VOICE", VOICE_NAMES)]:
-        L.append("#define N_%s %d" % (name, len(lst)))
+    # The option params: their count and their name array, generically. Existing C code keeps its
+    # names via the override dict; new params get LFO1_WAVE, NFILT_MODE, ... (spec: one emitter).
+    _override = {"choke": "CHOKE_NAMES", "voice": "VOICE_NAMES"}
+    _opts = [p for p in PARAMS if p.get("options")]
+    for p in _opts:
+        L.append("#define N_%s %d" % (p["key"].upper(), len(p["options"])))
     L.append("")
-    for name, arr, lst in [("FILTER_MODE", "FILTER_MODES", FILTER_MODES), ("OUT_SEL", "OUT_SELS", OUT_SELS),
-                           ("CHOKE", "CHOKE_NAMES", CHOKE_NAMES), ("VOICE", "VOICE_NAMES", VOICE_NAMES)]:
-        L.append("static const char *const %s[N_%s] = {%s};" % (arr, name, ", ".join('"%s"' % s for s in lst)))
+    # The LFO destinations (spec §6): every continuous voice parameter. The label list is the
+    # lfoN_dest option list; the keys and the VST enum indices are the engine's block-rate lookup.
+    _idx = {p["key"]: i for i, p in enumerate(PARAMS)}
+    L += ["/* the LFO destinations: every continuous voice parameter (PK_PATCH without options) */",
+          "static const char *const DEST_KEYS[N_LFO1_DEST] = {%s};" % ", ".join('"%s"' % k for k in DEST_KEYS),
+          "static const short DEST2P[N_LFO1_DEST] = {%s};" % ", ".join(str(_idx[k]) for k in DEST_KEYS),
+          ""]
+    for p in _opts:
+        L.append("static const char *const %s[N_%s] = {%s};"
+                 % (_override.get(p["key"], p["key"].upper() + "S"), p["key"].upper(),
+                    ", ".join('"%s"' % s for s in p["options"])))
     return "\n".join(L) + "\n"
 
 

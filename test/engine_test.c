@@ -580,6 +580,56 @@ int main(void)
     sp(x, "delay_detune", 64); sp(x, "delay_l", 64); sp(x, "delay_r", 64); sp(x, "delay_fb", 64);
     sp(x, "delay_wet", 0); sp(x, "voice", 0); sp(x, "osc_decay", 127);
 
+    /* ---- Task 9: the three LFOs (modulation, retrig, sync) ---- */
+    {
+        int di = 0;
+        while (strcmp(DEST_KEYS[di], "out_vol")) di++;   /* the destination list's "VOL" entry */
+        E->set_param(x, "lfo_bpm", "120");
+        /* prelude: pin the state earlier blocks left dirty (the FX prelude below restores it anyway) --
+         * especially the stutter gate, which would swing the sync test's windowed rms on its own */
+        sp(x, "src_mix", 0); sp(x, "osc_decay", 127); sp(x, "out_vol", 100);
+        sp(x, "vel_to_cut", 0); sp(x, "filter_cutoff", 127); sp(x, "filter_res", 0); sp(x, "fenv_amount", 0);
+        sp(x, "stutter_strength", 0);
+        sp(x, "lfo1_wave", 0); sp(x, "lfo1_sync", 0); sp(x, "lfo1_retrig", 1);
+        sp(x, "lfo1_rate", 100);                          /* ~4.6 Hz free-run (0.02*1000^(100/127)) */
+        sp(x, "lfo1_dest", di);
+        /* the wave is evaluated at the block's start phase: right after a retrig'd hit the sin is at
+         * ph = 0, so render a few blocks before capturing or the modulation reads as zero */
+        sp(x, "lfo1_depth", 0); note(x, 36, 127); run(x, 5); cap(x, A, 128);
+        sp(x, "lfo1_depth", 63); note(x, 36, 127); run(x, 5); cap(x, B, 128);
+        CHECK(capdiff(A, B, 128) > 1e-3, "LFO depth modulates the destination");
+        sp(x, "lfo1_depth", 0); note(x, 36, 127); run(x, 5); cap(x, B, 128);
+        CHECK(capdiff(A, B, 128) < 1e-6, "depth 0 = no modulation");
+        /* retrig ON: two hits bit-identical even on a random waveform (s&h) */
+        sp(x, "lfo1_wave", 5); sp(x, "lfo1_depth", 63); sp(x, "lfo1_retrig", 1);
+        note(x, 36, 127); cap(x, A, 128);
+        note(x, 36, 127); cap(x, B, 128);
+        CHECK(capdiff(A, B, 128) < 1e-9, "retrig resets the LFO (bit-identical)");
+        /* retrig OFF: the phase and the rng run on across hits (s&h steps at the cycle wrap, so run
+         * past a full cycle: one cycle at ~4.6 Hz is ~75 blocks) */
+        sp(x, "lfo1_retrig", 0);
+        note(x, 36, 127); cap(x, A, 128); run(x, 100);
+        note(x, 36, 127); cap(x, B, 128);
+        CHECK(capdiff(A, B, 128) > 1e-4, "retrig OFF keeps the phase");
+        /* sync: 120 bpm, 1/4 = 2 Hz; the windowed rms must sweep measurably. The base VOL is 40 so the
+         * swing up (+-63.5 knob units at depth 63) does not clip against VOL's 127 ceiling. The voice
+         * is noise: a 65 Hz sine beat-notes against the 2.9 ms window grid (one window covers 0.19 of
+         * a cycle), which swings the windowed rms 2.5x all by itself. */
+        sp(x, "lfo1_wave", 0); sp(x, "lfo1_retrig", 1); sp(x, "out_vol", 40);
+        sp(x, "src_mix", 127); sp(x, "noise_decay", 127);
+        sp(x, "lfo1_sync", 1); sp(x, "lfo1_div", 6);      /* 1/4 */
+        note(x, 36, 127);
+        float w[50]; run_windows(x, 50, 1, w);            /* 50 x 2.9 ms ~ 145 ms ~ 0.29 of a 2 Hz cycle */
+        float mn = minf(w, 50), mx = maxf(w, 50);
+        CHECK(mx > mn * 1.3f && mn > 0, "synced LFO sweeps the dest (%.4f..%.4f)", mn, mx);
+        E->get_param(x, "lfo1_rate_display", b, sizeof b); CHECK(!strcmp(b, "SYNC"), "rate shows SYNC (%s)", b);
+        sp(x, "lfo1_sync", 0);
+        E->get_param(x, "lfo1_rate_display", b, sizeof b); CHECK(strstr(b, "Hz"), "rate shows Hz (%s)", b);
+        /* leave the LFOs off (depth 0) for the blocks below */
+        sp(x, "lfo1_depth", 0); sp(x, "lfo1_dest", 0); sp(x, "lfo1_retrig", 1); sp(x, "out_vol", 100);
+        sp(x, "src_mix", 0);
+    }
+
     /* ---- the FX and the output (Task 5's block) ---- */
 /* prelude: one clean loud voice; everything Task 4 left dirty is restored/open */
 sp(x, "voice", 0); sp(x, "base_note", 36);

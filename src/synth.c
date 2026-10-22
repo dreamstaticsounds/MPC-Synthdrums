@@ -23,6 +23,7 @@ static void *create(const char *data_dir)
     if (!s) return NULL;
     patch_init_kit(s);
     s->base_note = (int)PDEF[P_BASE_NOTE].def;   /* device-level: a fresh kit starts at C1 (36) */
+    s->bpm = 120.0f;                             /* the LFOs' sync tempo until the host says otherwise */
     for (i = 0; i < 12; i++) {   /* the voices know their own number: their key is base_note + index */
         s->v[i].index = i;
         s->v[i].base_note = s->base_note;
@@ -155,6 +156,12 @@ static void set_param(void *p, const char *k, const char *val)
     Synth *s = p;
     int i;
     if (!strcmp(k, "state")) { deserialize(s, val); return; }
+    if (!strcmp(k, "lfo_bpm")) {   /* the host's tempo for the LFOs' sync (vst.json: HAS_LFO_BPM) */
+        s->bpm = (float)atof(val);
+        if (s->bpm < 20.0f) s->bpm = 20.0f;
+        if (s->bpm > 300.0f) s->bpm = 300.0f;
+        return;
+    }
     i = key_index(k);
     if (i < 0) return;
     {
@@ -225,6 +232,10 @@ static int get_param(void *p, const char *k, char *buf, int n)
         snprintf(t, sizeof t, "%u", s->rev);
         return put(buf, n, t);
     }
+    if (!strcmp(k, "lfo_bpm")) {
+        snprintf(t, sizeof t, "%g", (double)s->bpm);
+        return put(buf, n, t);
+    }
     /* "<key>_display": the engine composes a value string (dynamic_display params; see tools/gen_params.py) */
     {
         const int dlen = (int)strlen(k);
@@ -266,6 +277,15 @@ static int get_param(void *p, const char *k, char *buf, int n)
                     /* the vendor's quadratic taper: a signed speed percent, +-2.5% at the ends */
                     const float td = v * (2.0f / 127.0f) - 1.0f;
                     snprintf(t, sizeof t, "%+.1f%%", (double)(td * fabsf(td) * 2.5f));
+                    return put(buf, n, t);
+                }
+                if (j == P_LFO1_RATE || j == P_LFO2_RATE || j == P_LFO3_RATE) {
+                    /* synced: the division governs the rate (the knob reads SYNC); free-run: the
+                     * knob's 0.02..20 Hz exponential sweep, the same mapping the voice uses */
+                    const int sk = j == P_LFO1_RATE ? P_LFO1_SYNC
+                                  : j == P_LFO2_RATE ? P_LFO2_SYNC : P_LFO3_SYNC;
+                    if (s->v[s->sel].p[P2E[sk]] != 0.0f) return put(buf, n, "SYNC");
+                    hz_str(0.02f * powf(1000.0f, v * (1.0f / 127.0f)), t, sizeof t);
                     return put(buf, n, t);
                 }
                 return 0;   /* unknown dynamic display: the wrapper's default numeric path */
@@ -340,7 +360,7 @@ static void render(void *p, int16_t *out, int frames)
     for (n = 0; n < 12; n++) {
         Voice *v = &s->v[n];
         if (!v->sounding) continue;   /* the one-shot is over: the voice costs nothing */
-        sd_voice_render(v, acc, frames);
+        sd_voice_render(v, acc, frames, s->bpm);
     }
     for (i = 0; i < frames; i++) {
         float xl = acc[2 * i] * MASTER_GAIN;

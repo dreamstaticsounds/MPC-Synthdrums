@@ -122,11 +122,22 @@ void dly_step(DlySt *d, float inl, float inr, float tl_ms, float tr_ms, float de
 /* The choke fade: 5 ms, from full level to silence. */
 #define CHOKE_FADE_S 0.005f
 
+/* The LFOs (Task 9, spec §6): three per voice, assignable, free-run or tempo-synced, retriggered with
+ * the hit by default. This is continuous per-voice state, NOT per-hit state: retrig OFF runs on across
+ * hits, so sd_voice_reset() leaves it alone (it only seeds rng: an all-zero LFSR never advances) and
+ * sd_voice_note() applies the retrig knob. ph is the cycle position 0..1, hold the s&h value (and the
+ * rnd slew's start), tgt the rnd's next target, rng the random source (1.0.0's noise LFSR). */
+typedef struct {
+    float ph, hold, tgt;
+    uint32_t rng;
+} LFO;
+
 typedef struct {
     float p[EDIT_PARAMS];   /* the voice's sound: P_PITCH .. P_CHOKE, in parameter order */
     int sounding;           /* a trigger (a pad, TRIG) hit this voice and its one-shot has not finished yet */
     /* The voice's DSP state. sd_voice_note() resets all of it at every trigger, so two hits with the same
-     * settings render bit-identical audio (the engine's per-hit determinism guarantee). */
+     * settings render bit-identical audio (the engine's per-hit determinism guarantee). The LFOs are the
+     * exception: their phase and random source are continuous per-voice state (retrig OFF runs on). */
     int index;              /* the voice's number 0..11: its own key is base_note + index */
     int base_note;          /* the device-level base note (the caller keeps it current) */
     int note;               /* the note that triggered the voice (pitch_track's reference) */
@@ -158,6 +169,7 @@ typedef struct {
     DlySt dly;              /* the stereo delay, last in the chain -- after the pan, so the wet tails
                              * are independent of the voice's pan (spec §8) */
     float dly_quiet_t;      /* the delay's tail-liveness clock: quiet seconds since the last energy */
+    LFO lfo[3];             /* the three LFOs (Task 9): continuous per-voice state, retrig OFF runs on */
     float choke_gain;       /* the choke fade's multiplier: 1 = free, 0 = silenced */
     float choke_t;          /* the choke fade's age, in seconds */
     int choke_fading;       /* the choke fade is running: the voice is on its way to silence */
@@ -167,6 +179,7 @@ typedef struct {
     Voice v[12];
     int sel;                /* the selected voice, 0-based (the UI shows sel + 1) */
     int base_note;          /* MIDI note that plays v[0]; the other voices fold by 12 (device-level: survives KIT INIT) */
+    float bpm;              /* the host's tempo for the LFOs' sync (set_param "lfo_bpm"; the default 120) */
     unsigned rev;           /* display_rev: bumped when the engine changes values by itself */
     unsigned nan_count;     /* the samples the master bus had to silence (not finite): the test watches this */
     float clip[EDIT_PARAMS];/* voice_copy's snapshot of the selected voice (session-only: never serialized) */
@@ -181,4 +194,4 @@ void patch_init_kit(Synth *s);
  * velocity routings. Nothing here allocates and nothing here touches the other voices. */
 void sd_voice_reset(Voice *v);                              /* zero the DSP state */
 void sd_voice_note(Voice *v, float vel);                    /* (re)trigger: restart everything, keep the velocity scalars */
-void sd_voice_render(Voice *v, float *bus, int frames);   /* add the voice's signal to the stereo bus (interleaved: 2*frames floats) */
+void sd_voice_render(Voice *v, float *bus, int frames, float bpm);   /* add the voice's signal to the stereo bus (interleaved: 2*frames floats); bpm feeds the LFOs' sync */

@@ -35,6 +35,9 @@
 #define LFSR_SEED 0x12345678u
 
 #define VP(v, P_) ((v)->p[P2E[P_]])
+/* The block's working copy of the knobs (sd_voice_render): the LFOs modulate pv, never p[], so live
+ * knob turns and LFO modulation compose instead of fighting over the same storage. */
+#define PP(P_) pv[P2E[P_]]
 
 static float clampf(float v, float lo, float hi) { return v < lo ? lo : v > hi ? hi : v; }
 
@@ -107,6 +110,20 @@ static float lfsr_next(uint32_t *st)
     return (float)(s >> 16) * (2.0f / 65535.0f) - 1.0f;
 }
 
+/* The LFOs' parameters, per LFO (Task 9's append order: rate, sync, div, retrig, wave, dest, depth). */
+static const int lfo_rate_k[3] = { P_LFO1_RATE, P_LFO2_RATE, P_LFO3_RATE };
+static const int lfo_sync_k[3] = { P_LFO1_SYNC, P_LFO2_SYNC, P_LFO3_SYNC };
+static const int lfo_div_k[3] = { P_LFO1_DIV, P_LFO2_DIV, P_LFO3_DIV };
+static const int lfo_retrig_k[3] = { P_LFO1_RETRIG, P_LFO2_RETRIG, P_LFO3_RETRIG };
+static const int lfo_wave_k[3] = { P_LFO1_WAVE, P_LFO2_WAVE, P_LFO3_WAVE };
+static const int lfo_dest_k[3] = { P_LFO1_DEST, P_LFO2_DEST, P_LFO3_DEST };
+static const int lfo_depth_k[3] = { P_LFO1_DEPTH, P_LFO2_DEPTH, P_LFO3_DEPTH };
+/* The synced rate's division, by the lfoN_div option's index: the cycles per beat (a quarter note), so
+ * freq = mult * bpm/60 -- "1/4" (index 6) is one cycle per beat, "1 bar" (index 8) four beats, the T
+ * (triplet) and D (dotted) entries sit between as the musical grid puts them. */
+static const float BEAT_MULT[12] = { 8.0f, 6.0f, 4.0f, 3.0f, 2.0f, 1.5f, 1.0f, 0.5f, 0.25f, 4.0f / 3.0f,
+                                     2.0f / 3.0f, 1.0f / 3.0f };
+
 void sd_voice_reset(Voice *v)
 {
     v->vel = 0.0f;          /* the trigger's velocity and the four crossfade scalars it feeds */
@@ -167,6 +184,14 @@ void sd_voice_reset(Voice *v)
      * positions), so two hits with the same settings are bit-identical */
     dly_reset(&v->dly);
     v->dly_quiet_t = 0.0f;
+    /* The LFOs' random source must never be all-zero (an LFSR stuck at 0 never advances): the calloc'd
+     * engine start gets seeded here. Everything else in lfo[] is continuous per-voice state that this
+     * reset deliberately leaves alone -- retrig OFF runs on across hits; sd_voice_note() applies the
+     * retrig knob (that is why the per-hit reset and the LFOs' continuity can coexist). */
+    {
+        int l;
+        for (l = 0; l < 3; l++) if (v->lfo[l].rng == 0) v->lfo[l].rng = LFSR_SEED;
+    }
     /* the choke fade: a fresh hit is free (the fade only starts when another voice chokes this one) */
     v->choke_gain = 1.0f;
     v->choke_t = 0.0f;
@@ -185,111 +210,172 @@ void sd_voice_note(Voice *v, float vel)
     v->amp = 1.0f;        /* the osc amp env starts at full: a drum hits hard */
     v->t_amp = 0.0f;
     v->nenv = 1.0f;       /* the noise env starts at full (its attack ramps it from 0) */
+    /* The LFOs (Task 9): retrig ON (the default) restarts the phase and re-seeds the random source, so
+     * two hits with the same settings are bit-identical even on s&h/rnd. retrig OFF lets the phase and
+     * the rng run on across hits -- the one deliberate break in the per-hit determinism, and only when
+     * the user asks for it (sd_voice_reset leaves the LFO state alone so this can hold). */
+    {
+        int l;
+        for (l = 0; l < 3; l++) {
+            if (VP(v, lfo_retrig_k[l]) != 0.0f) {
+                v->lfo[l].ph = 0.0f;
+                v->lfo[l].rng = LFSR_SEED;
+                v->lfo[l].hold = lfsr_next(&v->lfo[l].rng);   /* the first cycle's value (s&h) ... */
+                v->lfo[l].tgt = lfsr_next(&v->lfo[l].rng);    /* ... and the first slew's target (rnd) */
+            }
+        }
+    }
     v->sounding = 1;
 }
 
-void sd_voice_render(Voice *v, float *bus, int frames)
+void sd_voice_render(Voice *v, float *bus, int frames, float bpm)
 {
+    /* The block's working copy of the knobs: the LFOs modulate it (block rate), so every block-level
+     * read below goes through PP() and the modulation lands on all of them. Live knob turns still take
+     * effect at the next block -- the copy keeps p[] pristine and the modulation composable. */
+    float pv[EDIT_PARAMS];
+    int l;
+    memcpy(pv, v->p, sizeof pv);
+
+    /* The three LFOs (spec §6): each is evaluated at the block's start phase, applies to its
+     * destination (half the knob's range around the current value, bidirectional, clamped to the
+     * knob's ends), then advances its phase by the block's length. The LFOs read their own
+     * rate/depth from pv, in chain order 1..3, so one LFO's destination on another LFO's rate
+     * cross-modulates it with a block of latency (LFO-FM). Synced rates come from the host's tempo
+     * (set_param "lfo_bpm"); free-run is the knob's 0.02..20 Hz exponential sweep. */
+    for (l = 0; l < 3; l++) {
+        const int sync = PP(lfo_sync_k[l]) != 0.0f;
+        const int kind = (int)(PP(lfo_wave_k[l]) + 0.5f);
+        const int di = (int)(PP(lfo_dest_k[l]) + 0.5f);
+        const float rate_hz = sync
+            ? BEAT_MULT[(int)(PP(lfo_div_k[l]) + 0.5f)] * (bpm * (1.0f / 60.0f))
+            : 0.02f * powf(1000.0f, PP(lfo_rate_k[l]) * (1.0f / 127.0f));
+        const float depth = PP(lfo_depth_k[l]) * (1.0f / 63.0f);   /* -1..1: bidirectional */
+        LFO *st = &v->lfo[l];
+        float val;
+        switch (kind) {   /* the wave at this block's start phase, in -1..1 */
+        case 0: val = sinf(TWO_PI * st->ph); break;
+        case 1: val = 4.0f * fabsf(st->ph - 0.5f) - 1.0f; break;   /* tri: +1 at 0, -1 at mid */
+        case 2: val = 2.0f * st->ph - 1.0f; break;                 /* saw up */
+        case 3: val = 1.0f - 2.0f * st->ph; break;                 /* saw down */
+        case 4: val = st->ph < 0.5f ? 1.0f : -1.0f; break;         /* square */
+        case 5: val = st->hold; break;                             /* s&h: the value held this cycle */
+        default: val = st->hold + (st->tgt - st->hold) * st->ph; break;  /* rnd: slewed per cycle */
+        }
+        {
+            const int e = P2E[DEST2P[di]];
+            const ParamDef *d = &PDEF[DEST2P[di]];
+            pv[e] = clampf(pv[e] + val * depth * 0.5f * (d->max - d->min), d->min, d->max);
+        }
+        /* advance the phase by the block; a wrap draws the random waves' next value */
+        st->ph += rate_hz * (float)frames * DT;
+        if (st->ph >= 1.0f) {
+            st->ph -= 1.0f;
+            if (kind == 5) st->hold = lfsr_next(&st->rng);
+            else if (kind == 6) { st->hold = st->tgt; st->tgt = lfsr_next(&st->rng); }
+        }
+    }
+
     /* The block's settings: the knobs may be turned while the hit rings. */
-    const float mix = VP(v, P_SRC_MIX) * (1.0f / 127.0f);
+    const float mix = PP(P_SRC_MIX) * (1.0f / 127.0f);
     const float osc_gain = (1.0f - mix) * v->vel_osc;
     const float noise_gain = mix * v->vel_noise;
-    const float fm = (VP(v, P_OSC_XMOD) * (1.0f / 127.0f)) * 3.0f;   /* the x-mod's FM index, in radians */
-    const float penv_amt = VP(v, P_PENV_AMOUNT) * (48.0f / 63.0f);   /* the pitch env's depth, in semitones */
-    const float a_col = 0.02f + 0.98f * (VP(v, P_NOISE_COLOUR) * (1.0f / 127.0f));   /* the colour's tilt */
+    const float fm = (PP(P_OSC_XMOD) * (1.0f / 127.0f)) * 3.0f;   /* the x-mod's FM index, in radians */
+    const float penv_amt = PP(P_PENV_AMOUNT) * (48.0f / 63.0f);   /* the pitch env's depth, in semitones */
+    const float a_col = 0.02f + 0.98f * (PP(P_NOISE_COLOUR) * (1.0f / 127.0f));   /* the colour's tilt */
     /* The osc amp env (the osc_shape knob's job since 1.0.1: the shape holds the level at full, then
      * releases). tau_tail is tau_amp itself when the hold is 0, so at shape 0 coef_tail equals 1.0.0's
      * coef_amp bit for bit. */
-    const float tau_amp = knob_time(VP(v, P_OSC_DECAY), 0.002f, 4.0f);
-    const float g_amp = VP(v, P_OSC_SHAPE) * (1.0f / 127.0f);
+    const float tau_amp = knob_time(PP(P_OSC_DECAY), 0.002f, 4.0f);
+    const float g_amp = PP(P_OSC_SHAPE) * (1.0f / 127.0f);
     const float T_amp = 9.0f * tau_amp, hold_amp = 0.8f * g_amp * T_amp;
     const float tau_tail = (hold_amp > 0.0f) ? (T_amp - hold_amp) * (1.0f / 9.0f) : tau_amp;
     const float coef_tail = expf(-1.0f / (SD_SR * tau_tail));
-    const float tau_n = knob_time(VP(v, P_NOISE_DECAY), 0.002f, 4.0f);
-    const float ta_n = knob_attack(VP(v, P_NOISE_ATTACK), 0.3f);
-    const float g_n = VP(v, P_NOISE_SHAPE) * (1.0f / 127.0f);
-    const float tau_p = knob_time(VP(v, P_PENV_DECAY), 0.001f, 0.3f);   /* the pitch sweep is short by design */
-    const float ta_p = knob_attack(VP(v, P_PENV_ATTACK), 0.3f);
-    const float g_p = VP(v, P_PENV_SHAPE) * (1.0f / 127.0f);
+    const float tau_n = knob_time(PP(P_NOISE_DECAY), 0.002f, 4.0f);
+    const float ta_n = knob_attack(PP(P_NOISE_ATTACK), 0.3f);
+    const float g_n = PP(P_NOISE_SHAPE) * (1.0f / 127.0f);
+    const float tau_p = knob_time(PP(P_PENV_DECAY), 0.001f, 0.3f);   /* the pitch sweep is short by design */
+    const float ta_p = knob_attack(PP(P_PENV_ATTACK), 0.3f);
+    const float g_p = PP(P_PENV_SHAPE) * (1.0f / 127.0f);
     /* The voice's own key, the played note's octave offset and the pitch knob give the base pitch; the pitch
      * envelope sweeps on top of it. The phase runs in cycles, so the increment is f/sr. */
     const float key = (float)(v->base_note + v->index);
-    const float track = VP(v, P_PITCH_TRACK) * (1.0f / 127.0f);
-    const float base_semis = key + VP(v, P_PITCH) + ((float)v->note - key) * track;
+    const float track = PP(P_PITCH_TRACK) * (1.0f / 127.0f);
+    const float base_semis = key + PP(P_PITCH) + ((float)v->note - key) * track;
     const float inc0 = (440.0f * powf(2.0f, (base_semis - 69.0f) / 12.0f)) / SD_SR;
     /* The filter's settings: the cutoff knob (30 Hz .. 16 kHz, a log sweep), the resonance (Q 0.7 .. 9, a
      * bounded peak -- it is a drum, not a siren), the mode and the velocity routing. The velocity moves the
      * cutoff around the middle: depth/127 * (vel - 0.5) * 3 kHz, so a soft hit is darker than a hard one. */
-    const float cut_knob = knob_freq(VP(v, P_FILTER_CUTOFF));
-    const float q = 0.7f + 8.3f * (VP(v, P_FILTER_RES) * (1.0f / 127.0f));
-    const int mode = (int)(VP(v, P_FILTER_MODE) + 0.5f);
-    const float vel_cut = VP(v, P_VEL_TO_CUT) * (1.0f / 127.0f) * (v->vel - 0.5f) * 3000.0f;
+    const float cut_knob = knob_freq(PP(P_FILTER_CUTOFF));
+    const float q = 0.7f + 8.3f * (PP(P_FILTER_RES) * (1.0f / 127.0f));
+    const int mode = (int)(PP(P_FILTER_MODE) + 0.5f);
+    const float vel_cut = PP(P_VEL_TO_CUT) * (1.0f / 127.0f) * (v->vel - 0.5f) * 3000.0f;
     /* The filter env: a one-shot cutoff envelope that starts amount * 4 kHz / 63 above (or below) the
      * cutoff and decays back to it. An amount of 0 is the env off: no sweep at all. */
-    const int fenv_on = (VP(v, P_FENV_AMOUNT) != 0.0f);
-    const float fenv_amt = VP(v, P_FENV_AMOUNT) * (4000.0f / 63.0f);
-    const float tau_f = knob_time(VP(v, P_FENV_DECAY), 0.002f, 2.0f);
+    const int fenv_on = (PP(P_FENV_AMOUNT) != 0.0f);
+    const float fenv_amt = PP(P_FENV_AMOUNT) * (4000.0f / 63.0f);
+    const float tau_f = knob_time(PP(P_FENV_DECAY), 0.002f, 2.0f);
     const float cut_base = cut_knob + vel_cut;
     float fenv0 = 0.0f;   /* the env's start offset, in Hz */
     /* The noise branch's filter: the same RBJ biquad on its own cutoff knob (20 Hz .. 18 kHz, a wider log
      * sweep than the osc filter's), its own Q/mode and its own envelope + velocity routing (the velocity
      * offset follows the same law as vel_to_cut). */
-    const float ncut_knob = 20.0f * powf(900.0f, VP(v, P_NOISE_FILTER) * (1.0f / 127.0f));
-    const float nq = 0.7f + 8.3f * (VP(v, P_NFILT_RES) * (1.0f / 127.0f));
-    const int nmode = (int)(VP(v, P_NFILT_MODE) + 0.5f);
-    const float nvel_cut = VP(v, P_NFILT_VEL) * (1.0f / 127.0f) * (v->vel - 0.5f) * 3000.0f;
-    const int nfenv_on = (VP(v, P_NFILT_ENV_AMOUNT) != 0.0f);
-    const float nfenv_amt = VP(v, P_NFILT_ENV_AMOUNT) * (4000.0f / 63.0f);
-    const float ntau_f = knob_time(VP(v, P_NFILT_ENV_DECAY), 0.002f, 2.0f);
+    const float ncut_knob = 20.0f * powf(900.0f, PP(P_NOISE_FILTER) * (1.0f / 127.0f));
+    const float nq = 0.7f + 8.3f * (PP(P_NFILT_RES) * (1.0f / 127.0f));
+    const int nmode = (int)(PP(P_NFILT_MODE) + 0.5f);
+    const float nvel_cut = PP(P_NFILT_VEL) * (1.0f / 127.0f) * (v->vel - 0.5f) * 3000.0f;
+    const int nfenv_on = (PP(P_NFILT_ENV_AMOUNT) != 0.0f);
+    const float nfenv_amt = PP(P_NFILT_ENV_AMOUNT) * (4000.0f / 63.0f);
+    const float ntau_f = knob_time(PP(P_NFILT_ENV_DECAY), 0.002f, 2.0f);
     const float ncut_base = ncut_knob + nvel_cut;
     float nfenv0 = 0.0f;
     int i;
 
     /* The stutter: the gate's rate (0.5 .. 40 Hz, an exponential sweep -- the roll/echo-machine feel)
      * and the gate's depth (0 = off, exactly; 1 = the gate closes completely between the bursts). */
-    const float stut_rate = 0.5f * powf(80.0f, VP(v, P_STUTTER_LENGTH) * (1.0f / 127.0f));
-    const float stut_depth = VP(v, P_STUTTER_STRENGTH) * (1.0f / 127.0f);
+    const float stut_rate = 0.5f * powf(80.0f, PP(P_STUTTER_LENGTH) * (1.0f / 127.0f));
+    const float stut_depth = PP(P_STUTTER_STRENGTH) * (1.0f / 127.0f);
     /* The waveshaper's drive: 0 = clean (the shaper is then exactly unity). */
-    const float drive01 = VP(v, P_DIST_DRIVE) * (1.0f / 127.0f);
+    const float drive01 = PP(P_DIST_DRIVE) * (1.0f / 127.0f);
     /* The peaking EQ: the bell's frequency (a log sweep, 40 Hz .. 12 kHz), its gain (+/-18 dB) and its
      * width (Q 0.5 .. 6, logarithmic: a Q knob is a musical control, so its ends are far apart and its
      * middle is where a bell usually sits). */
     /* The three EQ bands' settings: the same mapping each (freq 40 Hz..12 kHz log, gain ±18 dB, Q 0.5..6). */
     const float eq_hz[3] = {
-        EQ_MIN_HZ * powf(EQ_MAX_HZ / EQ_MIN_HZ, VP(v, P_EQ_FREQ) * (1.0f / 127.0f)),
-        EQ_MIN_HZ * powf(EQ_MAX_HZ / EQ_MIN_HZ, VP(v, P_EQ2_FREQ) * (1.0f / 127.0f)),
-        EQ_MIN_HZ * powf(EQ_MAX_HZ / EQ_MIN_HZ, VP(v, P_EQ3_FREQ) * (1.0f / 127.0f)) };
-    const float eq_db[3] = { VP(v, P_EQ_GAIN) * (18.0f / 63.0f), VP(v, P_EQ2_GAIN) * (18.0f / 63.0f),
-                             VP(v, P_EQ3_GAIN) * (18.0f / 63.0f) };
-    const float eq_q[3] = { 0.5f * powf(12.0f, VP(v, P_EQ_Q) * (1.0f / 127.0f)),
-                            0.5f * powf(12.0f, VP(v, P_EQ2_Q) * (1.0f / 127.0f)),
-                            0.5f * powf(12.0f, VP(v, P_EQ3_Q) * (1.0f / 127.0f)) };
+        EQ_MIN_HZ * powf(EQ_MAX_HZ / EQ_MIN_HZ, PP(P_EQ_FREQ) * (1.0f / 127.0f)),
+        EQ_MIN_HZ * powf(EQ_MAX_HZ / EQ_MIN_HZ, PP(P_EQ2_FREQ) * (1.0f / 127.0f)),
+        EQ_MIN_HZ * powf(EQ_MAX_HZ / EQ_MIN_HZ, PP(P_EQ3_FREQ) * (1.0f / 127.0f)) };
+    const float eq_db[3] = { PP(P_EQ_GAIN) * (18.0f / 63.0f), PP(P_EQ2_GAIN) * (18.0f / 63.0f),
+                             PP(P_EQ3_GAIN) * (18.0f / 63.0f) };
+    const float eq_q[3] = { 0.5f * powf(12.0f, PP(P_EQ_Q) * (1.0f / 127.0f)),
+                            0.5f * powf(12.0f, PP(P_EQ2_Q) * (1.0f / 127.0f)),
+                            0.5f * powf(12.0f, PP(P_EQ3_Q) * (1.0f / 127.0f)) };
     /* The FX row's knobs (all off at 0): the ring carrier (1 Hz..8 kHz log), the FM index (0..8 rad,
      * its gate the same knob), the comb's delay (0.5..30 ms) and the gated reverb's mix. */
-    const float ring01 = VP(v, P_RING_MOD) * (1.0f / 127.0f);
+    const float ring01 = PP(P_RING_MOD) * (1.0f / 127.0f);
     const float ring_hz = powf(8000.0f, ring01);          /* 1 Hz at 0 .. 8 kHz at 127 */
-    const float fm_g = VP(v, P_FM_INDEX) * (1.0f / 127.0f);
+    const float fm_g = PP(P_FM_INDEX) * (1.0f / 127.0f);
     const float fm_idx = 8.0f * fm_g;
-    const float comb01 = VP(v, P_COMB) * (1.0f / 127.0f);
+    const float comb01 = PP(P_COMB) * (1.0f / 127.0f);
     const float comb_ms = 0.5f * powf(60.0f, comb01);      /* 0.5 ms at 0 .. 30 ms at 127 */
-    const float gverb_m = VP(v, P_GVERB) * (1.0f / 127.0f);
+    const float gverb_m = PP(P_GVERB) * (1.0f / 127.0f);
     /* The stereo delay (spec §8, LAST in the chain): the two times (1..1000 ms, a log knob -- the
      * mapping lives here, the module takes milliseconds), the detune (0..1 -> the vendor's +-2.5%
      * quadratic taper), the feedback (capped at 0.95, the spec's runaway-tail clamp) and the mix
      * (0 = the module is skipped entirely: exact bypass and no CPU). */
-    const float dly_l_ms = powf(1000.0f, VP(v, P_DELAY_L) * (1.0f / 127.0f));
-    const float dly_r_ms = powf(1000.0f, VP(v, P_DELAY_R) * (1.0f / 127.0f));
-    const float dly_det = VP(v, P_DELAY_DETUNE) * (1.0f / 127.0f);
-    const float dly_fb = VP(v, P_DELAY_FB) * (0.95f / 127.0f);
-    const float dly_wet = VP(v, P_DELAY_WET) * (1.0f / 127.0f);
+    const float dly_l_ms = powf(1000.0f, PP(P_DELAY_L) * (1.0f / 127.0f));
+    const float dly_r_ms = powf(1000.0f, PP(P_DELAY_R) * (1.0f / 127.0f));
+    const float dly_det = PP(P_DELAY_DETUNE) * (1.0f / 127.0f);
+    const float dly_fb = PP(P_DELAY_FB) * (0.95f / 127.0f);
+    const float dly_wet = PP(P_DELAY_WET) * (1.0f / 127.0f);
     float dly_in_peak = 0.0f, dly_wet_peak = 0.0f;   /* the block's peaks: the tail-liveness clock */
     /* The output stage: the pan (equal power: -64 = hard left, 0 = centre, +63 = hard right) and the
      * level (0 .. ~1.4x, the init patch's 100 is a little over unity). The "out_sel" knob is state-only:
      * the MPC sums its three output buses to the main pair, so all three selections sound the same. */
-    const float pan_theta = (VP(v, P_OUT_PAN) + 64.0f) * (TWO_PI * 0.25f * (1.0f / 128.0f));
+    const float pan_theta = (PP(P_OUT_PAN) + 64.0f) * (TWO_PI * 0.25f * (1.0f / 128.0f));
     const float pan_l = cosf(pan_theta);
     const float pan_r = sinf(pan_theta);
-    const float vol = 1.4f * (VP(v, P_OUT_VOL) * (1.0f / 127.0f));
+    const float vol = 1.4f * (PP(P_OUT_VOL) * (1.0f / 127.0f));
 
     /* The env's start is clamped to the filter's range, so the sweep always starts inside it and decays
      * back to the cutoff the knob (and the velocity) asked for. */
