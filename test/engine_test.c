@@ -169,6 +169,26 @@ static double capdiff(const float *a, const float *b, int n)
     return n ? sqrt(acc / (double)n) : 0.0;
 }
 
+/* the mono fold of the next nblocks blocks (0..1): windows longer than cap's single block (Task 5) */
+static void cap_long(void *x, float *out, int nblocks)
+{
+    int b, i;
+    for (b = 0; b < nblocks; b++) {
+        E->render(x, buf, 128);
+        for (i = 0; i < 128; i++) out[b * 128 + i] = (float)((buf[2 * i] + buf[2 * i + 1]) * 0.5f) / 32768.0f;
+    }
+}
+
+/* rms of consecutive-sample differences: a lowpass rounds the waveform's edges and this drops
+ * (zero crossings cannot show it: a lowpassed square still crosses at the fundamental) */
+static double dfrms(const float *a, int n)
+{
+    double acc = 0.0;
+    int i;
+    for (i = 1; i < n; i++) { const double d = (double)a[i] - (double)a[i - 1]; acc += d * d; }
+    return n > 1 ? sqrt(acc / (double)(n - 1)) : 0.0;
+}
+
 static float __attribute__((unused)) buf_rms(const float *a, int n)
 {
     double acc = 0.0;
@@ -755,6 +775,20 @@ sp(x, "dist_drive", 127); sp(x, "trig", 1); cap(x, B, 60);
 CHECK(capdiff(A, B, 128*60) > 1e-3, "dist changes the wave");
 sp(x, "trig", 1); Stat dr = run(x, 60);   /* deterministic: same render as B */
 CHECK(dr.nan == 0 && dr.peak < 32767 && dr.rms > 0.01, "dist bounded and audible (%.4f)", dr.rms);
+/* the tone knob (1.0.2): darkens below 127, hugs bypass at 127, resets per hit */
+static float to[1280], tn127[1280], tn0[1280];
+sp(x, "osc_decay", 100); sp(x, "dist_drive", 127);
+sp(x, "dist_tone", 0); note(x, 36, 127); cap_long(x, tn0, 10);
+sp(x, "dist_tone", 127); note(x, 36, 127); cap_long(x, tn127, 10);
+CHECK(dfrms(tn0, 1280) < dfrms(tn127, 1280) * 0.7, "tone 0 darkens (%.5f vs %.5f)", dfrms(tn0, 1280), dfrms(tn127, 1280));
+sp(x, "dist_tone", 126); note(x, 36, 127); cap(x, to, 128);
+CHECK(capdiff(tn127, to, 128) < capdiff(tn127, tn0, 128) * 0.25, "tone approaches bypass at 127");
+sp(x, "dist_tone", 64); note(x, 36, 127); cap(x, to, 128);
+note(x, 36, 127); cap(x, tn127, 128);
+CHECK(capdiff(to, tn127, 128) < 1e-9, "dist tone state resets per hit (bit-identical)");
+sp(x, "dist_tone", 64); note(x, 36, 127); Stat tin = run(x, 60);
+CHECK(tin.nan == 0 && tin.peak < 32767, "tone bounded, no NaN");
+sp(x, "dist_tone", 127);
 /* EQ on broadband noise (an osc tone sits far below eq_freq and would pass boost and cut alike) */
 sp(x, "dist_drive", 0); sp(x, "src_mix", 127); sp(x, "noise_decay", 127); sp(x, "noise_colour", 127);
 sp(x, "filter_cutoff", 127); sp(x, "filter_res", 0);

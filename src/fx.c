@@ -3,7 +3,7 @@
  *
  * They sit between the voice's filters and its pan, in chain order:
  *
- *   sources -> filters -> stutter -> dist -> EQ x3 -> ring -> FM (gated by the osc amp env) -> comb -> gated reverb -> vol/pan
+ *   sources -> filters -> stutter -> dist -> tone -> EQ x3 -> ring -> FM (gated by the osc amp env) -> comb -> gated reverb -> vol/pan
  *
  * Stutter: a square gate whose rate the "length" knob sets (0.5 .. 40 Hz, an exponential sweep: the
  * roll/echo-machine feel) and whose depth the "strength" knob sets (0 = off, exactly; 1 = the gate
@@ -73,6 +73,15 @@ float fx_dist(float x, float drive01)
     pre = 1.0f + 8.0f * drive01;          /* the pre-gain: 1 .. 9 */
     makeup = 1.0f / sqrtf(pre);            /* the makeup: (1 + 8*drive)^-0.5 */
     return tanhf(pre * x) * makeup;
+}
+
+/* 1.0.2: the dist tone knob's one-pole lowpass, right after the waveshaper. The coefficient
+ * a = 1 - exp(-2*pi*fc/sr) is computed once a block by the caller; the knob at 127 skips this
+ * stage entirely (exact bypass), so the coefficient is never applied with a "neutral" value. */
+float fx_tone(float x, float *y, float a)
+{
+    *y += a * (x - *y);
+    return *y;
 }
 
 void eq_set(PeakEQ *e, float hz, float gain_db, float q)

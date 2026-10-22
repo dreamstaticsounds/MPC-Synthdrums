@@ -42,6 +42,7 @@ float fx_stutter_step(Stutter *s, float x, float rate_hz, float depth);
 
 /* The waveshaper: a tanh-style curve with a pre-gain and a makeup. drive01 = 0 is exactly unity. */
 float fx_dist(float x, float drive01);
+float fx_tone(float x, float *y, float a);   /* the dist tone's one-pole lowpass (1.0.2) */
 
 /* The peaking EQ: an RBJ bell. The brief's four state fields come first, in the brief's order: x1 and bx1
  * are the input's delays (n-1 and n-2), y1 and by1 the output's (n-1 and n-2). The five RBJ coefficients
@@ -160,6 +161,7 @@ typedef struct {
     Filt nfil;              /* the noise branch's filter (same biquad, its own envelope) */
     float nfenv_t;          /* the noise filter env's age, in seconds */
     Stutter stut;           /* the stutter gate's phase */
+    float tone_y;           /* the dist tone one-pole's state (1.0.2), per-hit */
     PeakEQ eq[3];           /* the three peaking EQ bands' coefficients and delay lines, in series */
     RingSt ring;            /* the FX row's states, in chain order after the EQ */
     FmSt fm;

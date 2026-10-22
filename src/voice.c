@@ -175,6 +175,7 @@ void sd_voice_reset(Voice *v)
     v->nfenv_t = 0.0f;
     /* the stutter's gate phase: per-hit state, so a retrigger starts the gate from the same place */
     v->stut.phase = 0.0f;
+    v->tone_y = 0.0f;
     /* the EQ's delay lines: per-hit state too (the coefficients are recomputed every block) */
     for (int i = 0; i < 3; i++) {
         v->eq[i].x1 = 0.0f;
@@ -350,6 +351,12 @@ void sd_voice_render(Voice *v, float *bus, int frames, float bpm)
     const float stut_depth = PP(P_STUTTER_STRENGTH) * (1.0f / 127.0f);
     /* The waveshaper's drive: 0 = clean (the shaper is then exactly unity). */
     const float drive01 = PP(P_DIST_DRIVE) * (1.0f / 127.0f);
+    /* The dist tone knob (1.0.2): its one-pole cutoff, 200 Hz * 80^(v/127) (200 Hz .. ~16 kHz);
+     * 127 skips the stage entirely (exact bypass). The coefficient is block-rate. */
+    const float tone127 = PP(P_DIST_TONE);
+    const float tone_a = tone127 < 127.0f
+                         ? 1.0f - expf(-TWO_PI * (200.0f * powf(80.0f, tone127 * (1.0f / 127.0f))) / SD_SR)
+                         : 1.0f;
     /* The peaking EQ: the bell's frequency (a log sweep, 40 Hz .. 12 kHz), its gain (+/-18 dB) and its
      * width (Q 0.5 .. 6, logarithmic: a Q knob is a musical control, so its ends are far apart and its
      * middle is where a bell usually sits). */
@@ -486,6 +493,9 @@ void sd_voice_render(Voice *v, float *bus, int frames, float bpm)
 
         /* The waveshaper: the drive knob's saturation (exactly unity when the knob is at zero). */
         out = fx_dist(out, drive01);
+
+        /* The tone knob's one-pole lowpass (1.0.2), right after the shaper; 127 = exact bypass. */
+        if (tone127 < 127.0f) out = fx_tone(out, &v->tone_y, tone_a);
 
         /* The three peaking EQ bands, in series (the FX section's EQ). */
         out = eq_step(&v->eq[0], out);
