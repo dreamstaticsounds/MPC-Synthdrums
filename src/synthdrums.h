@@ -29,7 +29,8 @@ typedef struct {
 void filt_set(Filt *f, float cutoff_hz, float q, int mode /*0=LP,1=BP,2=HP*/);
 float filt_step(Filt *f, float x);
 
-/* src/fx.c -- the voice's effects (the chain: sources -> filter -> stutter -> dist -> EQ -> pan/vol).
+/* src/fx.c -- the voice's effects (the chain: sources -> filters -> stutter -> dist -> EQ x3 -> ring ->
+ * FM -> comb -> gated reverb -> vol/pan -> the stereo delay -> the choke fade -> the bus).
  *
  * The stutter: a square gate whose phase runs at the "length" knob's rate. Only the phase is state:
  * the gate's shape (the 5 ms raised-cosine edges) follows from the rate, so the struct stays this small.
@@ -85,6 +86,39 @@ float fx_comb(CombSt *cb, float x, float ms, float fb, float g);
 typedef struct { float c[4][2048], a[2][224]; int ci[4], ai[2]; } GVerbSt;   /* combs < 2048; allpass: 5.0 ms = 221 < 224 */
 float fx_gverb(GVerbSt *gv, float x, float m, float t_hit);
 
+/* The stereo delay: Airwindows Doublelay, vendored and adapted (MIT License:
+ * third_party/airwindows-doublelay/LICENSE; the source's header names the upstream file). One shared
+ * delay line per channel with an integer read head, then 8 splicing pitch-shift heads per channel (the
+ * vendor's doubler: the "detune" pulls the two channels' heads apart in speed by up to +-2.5%), and the
+ * golden-ratio direct+cross feedback (the caller caps it at 0.95). Adapted to this engine's contract --
+ * float, fixed 44.1 kHz, one stereo sample per call, per-hit determinism: the sample-rate scaling
+ * (cycleEnd/lastRef), the VST plumbing and the output dither are gone; the knob->time mapping lives in
+ * the caller (this port takes milliseconds); the doubler's position accumulators stay double (they run
+ * forever and are only wrapped by subtraction); and dly_reset() initializes every field (the vendor's
+ * constructor leaves tracking[] unset; this port zeroes it) so two hits render bit-identical audio. */
+#define DL_LINE 44100      /* the main lines' span: 1 s at 44.1 kHz (vendor: 48005 at 48 kHz) */
+#define DL_WIDTH 2300      /* the doubler buffer's width (the vendor's fixed constant) */
+#define DL_ADJUST 1100     /* the splice detection's offset (the vendor's fixed constant) */
+typedef struct {
+    float p[2 * DL_WIDTH + 1];   /* the doubler's read buffer, double-written at [b] and [b + width] */
+    double pos[8], lastpos[8];   /* the 8 heads' positions (double: they accumulate, then wrap) */
+    float tracking[8];           /* the splice timers: 1.0 = splicing, 0 = this head is stable */
+    int gcount, lastcount;       /* the write cursors */
+    int active, bestsplice;      /* the active head and the candidate to splice to */
+    float bestyet;
+} DlyChan;
+typedef struct {
+    float l[DL_LINE + 1], r[DL_LINE + 1];   /* the main delay lines: 1 s at 44.1 kHz + 1 */
+    DlyChan lc, rc;
+    float feedbackL, feedbackR; /* the previous doubled outputs (the direct+cross feedback) */
+    float airPrevL, airEvenL, airOddL, airPrevR, airEvenR, airOddR;  /* the "air" treble compensator */
+    int flip;                   /* the air's even/odd alternator */
+    int dcount;                 /* the main lines' descending write cursor */
+} DlySt;
+void dly_reset(DlySt *d);
+void dly_step(DlySt *d, float inl, float inr, float tl_ms, float tr_ms, float detune01, float fb,
+              float wet, float *ol, float *or_);
+
 /* The choke fade: 5 ms, from full level to silence. */
 #define CHOKE_FADE_S 0.005f
 
@@ -121,6 +155,9 @@ typedef struct {
     CombSt comb;
     GVerbSt gv;
     float gverb_t;          /* the gated reverb's per-hit gate age, in seconds */
+    DlySt dly;              /* the stereo delay, last in the chain -- after the pan, so the wet tails
+                             * are independent of the voice's pan (spec §8) */
+    float dly_quiet_t;      /* the delay's tail-liveness clock: quiet seconds since the last energy */
     float choke_gain;       /* the choke fade's multiplier: 1 = free, 0 = silenced */
     float choke_t;          /* the choke fade's age, in seconds */
     int choke_fading;       /* the choke fade is running: the voice is on its way to silence */

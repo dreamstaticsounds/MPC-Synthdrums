@@ -522,6 +522,49 @@
    "min": 0,
    "max": 127,
    "display": "int"
+  },
+  {
+   "key": "delay_detune",
+   "name": "DELAY DETUNE",
+   "default": 64,
+   "min": 0,
+   "max": 127,
+   "display": "int",
+   "dynamic_display": true
+  },
+  {
+   "key": "delay_l",
+   "name": "DELAY L",
+   "default": 64,
+   "min": 0,
+   "max": 127,
+   "display": "int",
+   "dynamic_display": true
+  },
+  {
+   "key": "delay_r",
+   "name": "DELAY R",
+   "default": 64,
+   "min": 0,
+   "max": 127,
+   "display": "int",
+   "dynamic_display": true
+  },
+  {
+   "key": "delay_fb",
+   "name": "DELAY FB",
+   "default": 64,
+   "min": 0,
+   "max": 127,
+   "display": "int"
+  },
+  {
+   "key": "delay_wet",
+   "name": "DELAY WET",
+   "default": 0,
+   "min": 0,
+   "max": 127,
+   "display": "int"
   }
  ]
 }

@@ -66,6 +66,11 @@ enum {
     P_FM_INDEX,
     P_COMB,
     P_GVERB,
+    P_DELAY_DETUNE,
+    P_DELAY_L,
+    P_DELAY_R,
+    P_DELAY_FB,
+    P_DELAY_WET,
     P_COUNT
 };
 
@@ -73,7 +78,7 @@ enum {
 #define P_EDIT_FIRST P_PITCH
 
 /* the edit panel: one contiguous PK_PATCH block (the selected voice), P_PITCH .. P_CHOKE */
-#define EDIT_PARAMS 50
+#define EDIT_PARAMS 55
 
 /* enum -> p[] edit index (-1 when the param is not PK_PATCH), and its inverse */
 static const short P2E[P_COUNT] = {
@@ -137,6 +142,11 @@ static const short P2E[P_COUNT] = {
     47,
     48,
     49,
+    50,
+    51,
+    52,
+    53,
+    54,
 };
 
 static const short E2P[EDIT_PARAMS] = {
@@ -190,12 +200,17 @@ static const short E2P[EDIT_PARAMS] = {
     57,
     58,
     59,
+    60,
+    61,
+    62,
+    63,
+    64,
 };
 
 _Static_assert(0 == 0 && 34 == 34, "P_PITCH..P_CHOKE must keep VST indices 0..34");
 
 /* the init patch: PDEF's defaults in p[] edit order (patch_init_voice copies it) */
-static const float INIT_PATCH[EDIT_PARAMS] = {0, 127, 0, 0, 0, 0, 0, 64, 0, 0, 0, 0, 0, 64, 0, 64, 0, 64, 64, 127, 64, 0, 0, 0, 127, 0, 64, 0, 64, 0, 64, 0, 100, 0, 0, 0, 0, 0, 64, 0, 64, 0, 64, 64, 0, 64, 0, 0, 0, 0};
+static const float INIT_PATCH[EDIT_PARAMS] = {0, 127, 0, 0, 0, 0, 0, 64, 0, 0, 0, 0, 0, 64, 0, 64, 0, 64, 64, 127, 64, 0, 0, 0, 127, 0, 64, 0, 64, 0, 64, 0, 100, 0, 0, 0, 0, 0, 64, 0, 64, 0, 64, 64, 0, 64, 0, 0, 0, 0, 64, 64, 64, 64, 0};
 
 static const ParamDef PDEF[P_COUNT] = {
     {"pitch", PK_PATCH, -24, 24, 0, 0},
@@ -258,6 +273,11 @@ static const ParamDef PDEF[P_COUNT] = {
     {"fm_index", PK_PATCH, 0, 127, 0, 0},
     {"comb", PK_PATCH, 0, 127, 0, 0},
     {"gverb", PK_PATCH, 0, 127, 0, 0},
+    {"delay_detune", PK_PATCH, 0, 127, 64, 0},
+    {"delay_l", PK_PATCH, 0, 127, 64, 0},
+    {"delay_r", PK_PATCH, 0, 127, 64, 0},
+    {"delay_fb", PK_PATCH, 0, 127, 64, 0},
+    {"delay_wet", PK_PATCH, 0, 127, 0, 0},
 };
 
 #define N_FILTER_MODE 3

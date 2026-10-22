@@ -257,6 +257,17 @@ static int get_param(void *p, const char *k, char *buf, int n)
                     snprintf(t, sizeof t, "%.1f ms", 0.5f * powf(60.0f, v * (1.0f / 127.0f)));
                     return put(buf, n, t);
                 }
+                if (j == P_DELAY_L || j == P_DELAY_R) {
+                    /* the delay times: 1..1000 ms, the same log knob mapping the voice uses */
+                    snprintf(t, sizeof t, "%.0f ms", powf(1000.0f, v * (1.0f / 127.0f)));
+                    return put(buf, n, t);
+                }
+                if (j == P_DELAY_DETUNE) {
+                    /* the vendor's quadratic taper: a signed speed percent, +-2.5% at the ends */
+                    const float td = v * (2.0f / 127.0f) - 1.0f;
+                    snprintf(t, sizeof t, "%+.1f%%", (double)(td * fabsf(td) * 2.5f));
+                    return put(buf, n, t);
+                }
                 return 0;   /* unknown dynamic display: the wrapper's default numeric path */
             }
         }

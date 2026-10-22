@@ -129,6 +129,13 @@ PARAMS = [
     P("fm_index", "FM INDEX", 0, 127, 0),
     P("comb", "COMB", 0, 127, 0, dynamic_display=True),
     P("gverb", "GATED VERB", 0, 127, 0),
+
+    # The stereo delay (spec §8): Airwindows Doublelay, vendored, last in the chain. Wet 0 = exact bypass.
+    P("delay_detune", "DELAY DETUNE", 0, 127, 64, dynamic_display=True),
+    P("delay_l", "DELAY L", 0, 127, 64, dynamic_display=True),
+    P("delay_r", "DELAY R", 0, 127, 64, dynamic_display=True),
+    P("delay_fb", "DELAY FB", 0, 127, 64),
+    P("delay_wet", "DELAY WET", 0, 127, 0),
 ]
 
 for p in PARAMS:   # momentary keys: a plain 0..1 with no int display

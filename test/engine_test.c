@@ -519,6 +519,67 @@ int main(void)
     sp(x, "ring_mod", 0); sp(x, "fm_index", 0); sp(x, "comb", 0); sp(x, "gverb", 0);
     sp(x, "src_mix", 0); sp(x, "osc_decay", 127);
 
+    /* ---- Task 8: the stereo delay (vendored Airwindows Doublelay, last in the chain) ---- */
+    /* full wet: nothing reaches the output before the delay time, then the hit arrives */
+    sp(x, "voice", 0);
+    sp(x, "src_mix", 0); sp(x, "osc_decay", 20); sp(x, "osc_shape", 0);   /* the dry body dies by ~108 ms */
+    sp(x, "delay_wet", 127); sp(x, "delay_l", 102); sp(x, "delay_r", 102);  /* 1000^(102/127) ~ 257 ms */
+    sp(x, "delay_fb", 64); sp(x, "delay_detune", 64);
+    note(x, 36, 127);
+    Stat dl_pre = run_from(x, 0, 60);                        /* 0..174 ms: still inside the delay line */
+    CHECK(dl_pre.nan == 0 && dl_pre.rms < 1e-4, "full wet: silent before the delay time (%.6f)", dl_pre.rms);
+    Stat dl_echo = run_from(x, 30, 30);                      /* 261..348 ms: the echo window */
+    CHECK(dl_echo.nan == 0 && dl_echo.rms > 1e-4, "the delay echoes after the dry died (%.6f)", dl_echo.rms);
+    /* wet 0 is exact bypass: the hit passes through immediately, the tail window stays silent */
+    sp(x, "delay_wet", 0); note(x, 36, 127);
+    Stat dl_thru = run_from(x, 0, 10);
+    CHECK(dl_thru.rms > 1e-3, "wet 0 passes the dry hit through (%.4f)", dl_thru.rms);
+    Stat dl_off = run_from(x, 80, 15);
+    CHECK(dl_off.rms < 1e-5, "wet 0 is silent in the tail window (%.6f)", dl_off.rms);
+    /* feedback at the knob max cannot run away (fb_eff caps at 0.95) */
+    sp(x, "delay_wet", 127); sp(x, "delay_fb", 127); note(x, 36, 127);
+    Stat dl_s = run(x, 200);
+    CHECK(dl_s.nan == 0 && dl_s.peak < 32767, "fb 127 bounded (%d)", dl_s.peak);
+    /* without feedback the single echo ends, and the tail window is silent */
+    sp(x, "delay_fb", 0); note(x, 36, 127);
+    run_from(x, 120, 40);                                    /* past the echo (~257 + 60 ms) */
+    Stat dl_far = run(x, 40);
+    CHECK(dl_far.nan == 0 && dl_far.peak < 300, "tail ends and the voice goes silent (%d)", dl_far.peak);
+    /* the choke cuts the delay tail: voice 0 (panned left) rings in group 1, voice 2 (also group 1,
+     * panned right, body short) triggers and must silence the left channel completely */
+    sp(x, "voice", 0); sp(x, "osc_decay", 127); sp(x, "out_pan", -63); sp(x, "choke", 1);
+    sp(x, "delay_fb", 64);
+    sp(x, "voice", 2); sp(x, "src_mix", 0); sp(x, "osc_decay", 30); sp(x, "out_pan", 63); sp(x, "choke", 1);
+    sp(x, "voice", 0); note(x, 36, 127);
+    run(x, 90);                                              /* ~261 ms: the dry is long dead, the tail rings */
+    StatLR dl_ring = run_lr(x, 5);
+    CHECK(dl_ring.left > 1e-3, "the delay tail rings before the choke (%.6f)", dl_ring.left);
+    sp(x, "voice", 2); sp(x, "trig", 1);                     /* chokes voice 0 mid-tail */
+    run(x, 3);                                               /* the 5 ms choke fade runs out here */
+    Stat dl_ch = run(x, 5);
+    CHECK(dl_ch.peak_l < 400, "choke silences the delay tail (%d)", dl_ch.peak_l);
+    sp(x, "voice", 2); sp(x, "choke", 0); sp(x, "out_pan", 0);
+    /* two hits bit-identical with the delay engaged (delay ~2.3 ms: the echo lands inside the
+     * 128-frame capture, so the comparison sees real delayed signal) */
+    sp(x, "voice", 0); sp(x, "choke", 0); sp(x, "out_pan", 0); sp(x, "osc_decay", 64);
+    sp(x, "delay_fb", 64); sp(x, "delay_wet", 127); sp(x, "delay_l", 15); sp(x, "delay_r", 15);
+    run(x, 45);    /* flush: voice 2's body must be gone -- the caps compare the whole master bus */
+    note(x, 36, 127); cap(x, A, 128);
+    note(x, 36, 127); cap(x, B, 128);
+    CHECK(capdiff(A, B, 128) < 1e-9, "delay state resets per hit (bit-identical)");
+    /* the displays */
+    sp(x, "delay_l", 127); E->get_param(x, "delay_l_display", b, sizeof b);
+    CHECK(!strcmp(b, "1000 ms"), "delay display (%s)", b);
+    sp(x, "delay_r", 0); E->get_param(x, "delay_r_display", b, sizeof b);
+    CHECK(!strcmp(b, "1 ms"), "delay display lo (%s)", b);
+    sp(x, "delay_detune", 127); E->get_param(x, "delay_detune_display", b, sizeof b);
+    CHECK(!strcmp(b, "+2.5%"), "detune display (%s)", b);
+    sp(x, "delay_detune", 0); E->get_param(x, "delay_detune_display", b, sizeof b);
+    CHECK(!strcmp(b, "-2.5%"), "detune display lo (%s)", b);
+    /* leave the delay off (exact bypass) for every later block */
+    sp(x, "delay_detune", 64); sp(x, "delay_l", 64); sp(x, "delay_r", 64); sp(x, "delay_fb", 64);
+    sp(x, "delay_wet", 0); sp(x, "voice", 0); sp(x, "osc_decay", 127);
+
     /* ---- the FX and the output (Task 5's block) ---- */
 /* prelude: one clean loud voice; everything Task 4 left dirty is restored/open */
 sp(x, "voice", 0); sp(x, "base_note", 36);

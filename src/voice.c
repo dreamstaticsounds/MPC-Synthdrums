@@ -14,7 +14,8 @@
  *  - the filters: each branch (osc, noise) has its own resonant 12 dB/oct biquad (LP/BP/HP) and its own
  *    one-shot envelope; the mix happens after both
  *  - the effects: the stutter gate -> the waveshaper -> the three peaking EQ bands -> ring mod, FM, comb,
- *    gated reverb -> the pan and the level
+ *    gated reverb -> the level and the pan -> the stereo delay -> the choke fade (the choke goes last so
+ *    it cuts the delay's feedback tails too)
  *  - the velocity routings: m = 1 - depth/127 + (depth/127)*vel on the amp, the two sources and the penv depth */
 #include <math.h>
 #include <stdint.h>
@@ -162,6 +163,10 @@ void sd_voice_reset(Voice *v)
     memset(&v->comb, 0, sizeof v->comb);
     memset(&v->gv, 0, sizeof v->gv);
     v->gverb_t = 0.0f;
+    /* the stereo delay: fully reinitialized at every hit (the doubler's heads return to their starting
+     * positions), so two hits with the same settings are bit-identical */
+    dly_reset(&v->dly);
+    v->dly_quiet_t = 0.0f;
     /* the choke fade: a fresh hit is free (the fade only starts when another voice chokes this one) */
     v->choke_gain = 1.0f;
     v->choke_t = 0.0f;
@@ -268,6 +273,16 @@ void sd_voice_render(Voice *v, float *bus, int frames)
     const float comb01 = VP(v, P_COMB) * (1.0f / 127.0f);
     const float comb_ms = 0.5f * powf(60.0f, comb01);      /* 0.5 ms at 0 .. 30 ms at 127 */
     const float gverb_m = VP(v, P_GVERB) * (1.0f / 127.0f);
+    /* The stereo delay (spec §8, LAST in the chain): the two times (1..1000 ms, a log knob -- the
+     * mapping lives here, the module takes milliseconds), the detune (0..1 -> the vendor's +-2.5%
+     * quadratic taper), the feedback (capped at 0.95, the spec's runaway-tail clamp) and the mix
+     * (0 = the module is skipped entirely: exact bypass and no CPU). */
+    const float dly_l_ms = powf(1000.0f, VP(v, P_DELAY_L) * (1.0f / 127.0f));
+    const float dly_r_ms = powf(1000.0f, VP(v, P_DELAY_R) * (1.0f / 127.0f));
+    const float dly_det = VP(v, P_DELAY_DETUNE) * (1.0f / 127.0f);
+    const float dly_fb = VP(v, P_DELAY_FB) * (0.95f / 127.0f);
+    const float dly_wet = VP(v, P_DELAY_WET) * (1.0f / 127.0f);
+    float dly_in_peak = 0.0f, dly_wet_peak = 0.0f;   /* the block's peaks: the tail-liveness clock */
     /* The output stage: the pan (equal power: -64 = hard left, 0 = centre, +63 = hard right) and the
      * level (0 .. ~1.4x, the init patch's 100 is a little over unity). The "out_sel" knob is state-only:
      * the MPC sums its three output buses to the main pair, so all three selections sound the same. */
@@ -300,7 +315,7 @@ void sd_voice_render(Voice *v, float *bus, int frames)
     for (i = 0; i < 3; i++) eq_set(&v->eq[i], eq_hz[i], eq_db[i], eq_q[i]);
 
     for (i = 0; i < frames; i++) {
-        float w, inc, osc, noise, out;
+        float w, inc, osc, noise, out, ol, orr;
 
         /* The noise generator runs every sample: it feeds the x-mod as well as the noise source. */
         w = lfsr_next(&v->lfsr);
@@ -370,9 +385,28 @@ void sd_voice_render(Voice *v, float *bus, int frames)
         v->gverb_t += DT;
         out = fx_gverb(&v->gv, out, gverb_m, v->gverb_t);
 
-        /* The choke fade: it lives in the voice's own output path (never in the master bus, which would
-         * fade the choking voice's own hit as well). The fade is a raised cosine over 5 ms, so it starts
-         * and ends without a step. */
+        /* The level and the pan: the voice's mono signal becomes stereo here (spec §8: everything up
+         * to and including the gated reverb is mono; the delay runs true stereo after the pan, its wet
+         * independent of the pan). */
+        out *= vol;
+        ol = out * pan_l;
+        orr = out * pan_r;
+
+        /* The stereo delay: last in the chain (wet 0 = the module is skipped entirely). Its input and
+         * wet peaks feed the tail-liveness clock below: a hit whose dry has died must live on until
+         * every written sample has been heard out of the line. */
+        if (fabsf(ol) > dly_in_peak) dly_in_peak = fabsf(ol);
+        if (fabsf(orr) > dly_in_peak) dly_in_peak = fabsf(orr);
+        if (dly_wet > 0.0f) {
+            dly_step(&v->dly, ol, orr, dly_l_ms, dly_r_ms, dly_det, dly_fb, dly_wet, &ol, &orr);
+            if (fabsf(ol) > dly_wet_peak) dly_wet_peak = fabsf(ol);
+            if (fabsf(orr) > dly_wet_peak) dly_wet_peak = fabsf(orr);
+        }
+
+        /* The choke fade AFTER the delay: it lives in the voice's own output path (never in the master
+         * bus, which would fade the choking voice's own hit as well) and it must cut the delay's
+         * feedback tails too -- fading the input would silence the dry while the loop kept ringing.
+         * The fade is a raised cosine over 5 ms, so it starts and ends without a step. */
         if (v->choke_fading) {
             float k;
             v->choke_t += DT;
@@ -385,19 +419,28 @@ void sd_voice_render(Voice *v, float *bus, int frames)
                 v->choke_gain = 0.5f * (1.0f + cosf(TWO_PI * 0.5f * k));
             }
         }
-        out *= v->choke_gain;
+        ol *= v->choke_gain;
+        orr *= v->choke_gain;
 
-        /* The pan and the level: the voice's tail. */
-        out *= vol;
-        bus[2 * i] += out * pan_l;
-        bus[2 * i + 1] += out * pan_r;
+        bus[2 * i] += ol;
+        bus[2 * i + 1] += orr;
     }
+
+    /* The delay's tail-liveness clock: any block that carries energy (into the line, or out of it)
+     * resets it. The voice may drop once it has been quiet longer than the current delay time -- that
+     * horizon covers the pending samples still travelling down the line, which the wet output alone
+     * cannot see (at full wet the output is silent until the first echo arrives). */
+    if (dly_wet > 0.0f && (dly_in_peak > ENV_FLOOR || dly_wet_peak > ENV_FLOOR)) v->dly_quiet_t = 0.0f;
+    else if (dly_wet > 0.0f) v->dly_quiet_t += (float)frames * DT;
 
     /* The one-shot is over when nothing audible is left: the voice drops out of the 12-voice loop. */
     {
         const int amp_dead = (v->amp < ENV_FLOOR);
         const int noise_dead = (v->t_nenv > ta_n) && (v->nenv < ENV_FLOOR);
-        if ((amp_dead || osc_gain <= 0.0f) && (noise_dead || noise_gain <= 0.0f)) v->sounding = 0;
+        const int src_dead = (amp_dead || osc_gain <= 0.0f) && (noise_dead || noise_gain <= 0.0f);
+        const float horizon = 0.001f * (dly_l_ms > dly_r_ms ? dly_l_ms : dly_r_ms) + 0.02f;
+        const int delay_alive = (dly_wet > 0.0f) && (v->dly_quiet_t <= horizon);
+        if (src_dead && !delay_alive) v->sounding = 0;
         if (v->choke_gain <= 0.0f) v->sounding = 0;   /* the choke fade has run out: the voice is silent */
     }
 }
