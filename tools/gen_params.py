@@ -75,7 +75,7 @@ PARAMS = [
     P("noise_shape", "NOISE SHAPE", 0, 127, 64),
     P("noise_filter", "NOISE CUTOFF", 0, 127, 127, dynamic_display=True),
     # STUTTER
-    P("stutter_length", "STUTTER LEN", 0, 127, 64),
+    P("stutter_length", "STUTTER RATE", 0, 127, 64, dynamic_display=True),
     P("stutter_strength", "STUTTER STR", 0, 127, 0),
     # FILTER
     P("filter_mode", "FILTER MODE", d=0, opts=FILTER_MODES),
@@ -156,6 +156,16 @@ for _n in (1, 2, 3):
         P("lfo%d_depth" % _n, "LFO%d DEPTH" % _n, -63, 63, 0),
     ]
 PARAMS += _lfo
+
+# 1.0.2 (design section 8): appended, append-only rule. dist_tone and width are continuous so they
+# join the LFO dest list at its end (existing dest indices stay stable); the sync switches have
+# options and are excluded automatically.
+PARAMS += [
+    P("dist_tone", "DIST TONE", 0, 127, 127),
+    P("width", "WIDTH", 0, 127, 0),
+    P("delay_l_sync", "DELAY L SYNC", d=0, opts=["OFF", "ON"]),
+    P("delay_r_sync", "DELAY R SYNC", d=0, opts=["OFF", "ON"]),
+]
 
 # The LFO destinations (DEST): every continuous voice parameter (PK_PATCH without options -- the enums
 # are excluded per spec), in panel order. The labels are what the MPC shows in the dest option list;

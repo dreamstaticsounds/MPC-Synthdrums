@@ -164,11 +164,12 @@
   },
   {
    "key": "stutter_length",
-   "name": "STUTTER LEN",
+   "name": "STUTTER RATE",
    "default": 64,
    "min": 0,
    "max": 127,
-   "display": "int"
+   "display": "int",
+   "dynamic_display": true
   },
   {
    "key": "stutter_strength",
@@ -659,7 +660,7 @@
     "NOISE DECAY",
     "NOISE SHAPE",
     "NOISE CUTOFF",
-    "STUTTER LEN",
+    "STUTTER RATE",
     "STUTTER STR",
     "RES",
     "CUTOFF",
@@ -695,10 +696,12 @@
     "LFO2 RATE",
     "LFO2 DEPTH",
     "LFO3 RATE",
-    "LFO3 DEPTH"
+    "LFO3 DEPTH",
+    "DIST TONE",
+    "WIDTH"
    ],
    "min": 0,
-   "max": 56
+   "max": 58
   },
   {
    "key": "lfo1_depth",
@@ -801,7 +804,7 @@
     "NOISE DECAY",
     "NOISE SHAPE",
     "NOISE CUTOFF",
-    "STUTTER LEN",
+    "STUTTER RATE",
     "STUTTER STR",
     "RES",
     "CUTOFF",
@@ -837,10 +840,12 @@
     "LFO2 RATE",
     "LFO2 DEPTH",
     "LFO3 RATE",
-    "LFO3 DEPTH"
+    "LFO3 DEPTH",
+    "DIST TONE",
+    "WIDTH"
    ],
    "min": 0,
-   "max": 56
+   "max": 58
   },
   {
    "key": "lfo2_depth",
@@ -943,7 +948,7 @@
     "NOISE DECAY",
     "NOISE SHAPE",
     "NOISE CUTOFF",
-    "STUTTER LEN",
+    "STUTTER RATE",
     "STUTTER STR",
     "RES",
     "CUTOFF",
@@ -979,10 +984,12 @@
     "LFO2 RATE",
     "LFO2 DEPTH",
     "LFO3 RATE",
-    "LFO3 DEPTH"
+    "LFO3 DEPTH",
+    "DIST TONE",
+    "WIDTH"
    ],
    "min": 0,
-   "max": 56
+   "max": 58
   },
   {
    "key": "lfo3_depth",
@@ -991,6 +998,44 @@
    "min": -63,
    "max": 63,
    "display": "int"
+  },
+  {
+   "key": "dist_tone",
+   "name": "DIST TONE",
+   "default": 127,
+   "min": 0,
+   "max": 127,
+   "display": "int"
+  },
+  {
+   "key": "width",
+   "name": "WIDTH",
+   "default": 0,
+   "min": 0,
+   "max": 127,
+   "display": "int"
+  },
+  {
+   "key": "delay_l_sync",
+   "name": "DELAY L SYNC",
+   "default": 0,
+   "options": [
+    "OFF",
+    "ON"
+   ],
+   "min": 0,
+   "max": 1
+  },
+  {
+   "key": "delay_r_sync",
+   "name": "DELAY R SYNC",
+   "default": 0,
+   "options": [
+    "OFF",
+    "ON"
+   ],
+   "min": 0,
+   "max": 1
   }
  ]
 }

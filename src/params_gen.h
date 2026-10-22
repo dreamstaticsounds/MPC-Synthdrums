@@ -92,6 +92,10 @@ enum {
     P_LFO3_WAVE,
     P_LFO3_DEST,
     P_LFO3_DEPTH,
+    P_DIST_TONE,
+    P_WIDTH,
+    P_DELAY_L_SYNC,
+    P_DELAY_R_SYNC,
     P_COUNT
 };
 
@@ -99,7 +103,7 @@ enum {
 #define P_EDIT_FIRST P_PITCH
 
 /* the edit panel: one contiguous PK_PATCH block (the selected voice), P_PITCH .. P_CHOKE */
-#define EDIT_PARAMS 76
+#define EDIT_PARAMS 80
 
 /* enum -> p[] edit index (-1 when the param is not PK_PATCH), and its inverse */
 static const short P2E[P_COUNT] = {
@@ -189,6 +193,10 @@ static const short P2E[P_COUNT] = {
     73,
     74,
     75,
+    76,
+    77,
+    78,
+    79,
 };
 
 static const short E2P[EDIT_PARAMS] = {
@@ -268,12 +276,16 @@ static const short E2P[EDIT_PARAMS] = {
     83,
     84,
     85,
+    86,
+    87,
+    88,
+    89,
 };
 
 _Static_assert(P_PITCH == 0 && P_CHOKE == 34, "P_PITCH..P_CHOKE must keep VST indices 0..34");
 
 /* the init patch: PDEF's defaults in p[] edit order (patch_init_voice copies it) */
-static const float INIT_PATCH[EDIT_PARAMS] = {0, 127, 0, 0, 0, 0, 0, 64, 0, 0, 0, 0, 0, 64, 0, 64, 0, 64, 64, 127, 64, 0, 0, 0, 127, 0, 64, 0, 64, 0, 64, 0, 100, 0, 0, 0, 0, 0, 64, 0, 64, 0, 64, 64, 0, 64, 0, 0, 0, 0, 64, 64, 64, 64, 0, 64, 0, 6, 1, 0, 0, 0, 64, 0, 6, 1, 0, 0, 0, 64, 0, 6, 1, 0, 0, 0};
+static const float INIT_PATCH[EDIT_PARAMS] = {0, 127, 0, 0, 0, 0, 0, 64, 0, 0, 0, 0, 0, 64, 0, 64, 0, 64, 64, 127, 64, 0, 0, 0, 127, 0, 64, 0, 64, 0, 64, 0, 100, 0, 0, 0, 0, 0, 64, 0, 64, 0, 64, 64, 0, 64, 0, 0, 0, 0, 64, 64, 64, 64, 0, 64, 0, 6, 1, 0, 0, 0, 64, 0, 6, 1, 0, 0, 0, 64, 0, 6, 1, 0, 0, 0, 127, 0, 0, 0};
 
 static const ParamDef PDEF[P_COUNT] = {
     {"pitch", PK_PATCH, -24, 24, 0, 0},
@@ -346,22 +358,26 @@ static const ParamDef PDEF[P_COUNT] = {
     {"lfo1_div", PK_PATCH, 0, 11, 6, 12},
     {"lfo1_retrig", PK_PATCH, 0, 1, 1, 2},
     {"lfo1_wave", PK_PATCH, 0, 6, 0, 7},
-    {"lfo1_dest", PK_PATCH, 0, 56, 0, 57},
+    {"lfo1_dest", PK_PATCH, 0, 58, 0, 59},
     {"lfo1_depth", PK_PATCH, -63, 63, 0, 0},
     {"lfo2_rate", PK_PATCH, 0, 127, 64, 0},
     {"lfo2_sync", PK_PATCH, 0, 1, 0, 2},
     {"lfo2_div", PK_PATCH, 0, 11, 6, 12},
     {"lfo2_retrig", PK_PATCH, 0, 1, 1, 2},
     {"lfo2_wave", PK_PATCH, 0, 6, 0, 7},
-    {"lfo2_dest", PK_PATCH, 0, 56, 0, 57},
+    {"lfo2_dest", PK_PATCH, 0, 58, 0, 59},
     {"lfo2_depth", PK_PATCH, -63, 63, 0, 0},
     {"lfo3_rate", PK_PATCH, 0, 127, 64, 0},
     {"lfo3_sync", PK_PATCH, 0, 1, 0, 2},
     {"lfo3_div", PK_PATCH, 0, 11, 6, 12},
     {"lfo3_retrig", PK_PATCH, 0, 1, 1, 2},
     {"lfo3_wave", PK_PATCH, 0, 6, 0, 7},
-    {"lfo3_dest", PK_PATCH, 0, 56, 0, 57},
+    {"lfo3_dest", PK_PATCH, 0, 58, 0, 59},
     {"lfo3_depth", PK_PATCH, -63, 63, 0, 0},
+    {"dist_tone", PK_PATCH, 0, 127, 127, 0},
+    {"width", PK_PATCH, 0, 127, 0, 0},
+    {"delay_l_sync", PK_PATCH, 0, 1, 0, 2},
+    {"delay_r_sync", PK_PATCH, 0, 1, 0, 2},
 };
 
 #define N_FILTER_MODE 3
@@ -373,21 +389,23 @@ static const ParamDef PDEF[P_COUNT] = {
 #define N_LFO1_DIV 12
 #define N_LFO1_RETRIG 2
 #define N_LFO1_WAVE 7
-#define N_LFO1_DEST 57
+#define N_LFO1_DEST 59
 #define N_LFO2_SYNC 2
 #define N_LFO2_DIV 12
 #define N_LFO2_RETRIG 2
 #define N_LFO2_WAVE 7
-#define N_LFO2_DEST 57
+#define N_LFO2_DEST 59
 #define N_LFO3_SYNC 2
 #define N_LFO3_DIV 12
 #define N_LFO3_RETRIG 2
 #define N_LFO3_WAVE 7
-#define N_LFO3_DEST 57
+#define N_LFO3_DEST 59
+#define N_DELAY_L_SYNC 2
+#define N_DELAY_R_SYNC 2
 
 /* the LFO destinations: every continuous voice parameter (PK_PATCH without options) */
-static const char *const DEST_KEYS[N_LFO1_DEST] = {"pitch", "vel_to_vol", "vel_to_cut", "vel_to_noise", "vel_to_osc", "vel_to_penv", "src_mix", "osc_decay", "osc_shape", "osc_xmod", "pitch_track", "penv_attack", "penv_decay", "penv_shape", "penv_amount", "noise_colour", "noise_attack", "noise_decay", "noise_shape", "noise_filter", "stutter_length", "stutter_strength", "filter_res", "filter_cutoff", "fenv_amount", "fenv_decay", "dist_drive", "eq_freq", "eq_gain", "eq_q", "out_pan", "out_vol", "nfilt_res", "nfilt_env_amount", "nfilt_env_decay", "nfilt_vel", "eq2_freq", "eq2_gain", "eq2_q", "eq3_freq", "eq3_gain", "eq3_q", "ring_mod", "fm_index", "comb", "gverb", "delay_detune", "delay_l", "delay_r", "delay_fb", "delay_wet", "lfo1_rate", "lfo1_depth", "lfo2_rate", "lfo2_depth", "lfo3_rate", "lfo3_depth"};
-static const short DEST2P[N_LFO1_DEST] = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 45, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 71, 72, 78, 79, 85};
+static const char *const DEST_KEYS[N_LFO1_DEST] = {"pitch", "vel_to_vol", "vel_to_cut", "vel_to_noise", "vel_to_osc", "vel_to_penv", "src_mix", "osc_decay", "osc_shape", "osc_xmod", "pitch_track", "penv_attack", "penv_decay", "penv_shape", "penv_amount", "noise_colour", "noise_attack", "noise_decay", "noise_shape", "noise_filter", "stutter_length", "stutter_strength", "filter_res", "filter_cutoff", "fenv_amount", "fenv_decay", "dist_drive", "eq_freq", "eq_gain", "eq_q", "out_pan", "out_vol", "nfilt_res", "nfilt_env_amount", "nfilt_env_decay", "nfilt_vel", "eq2_freq", "eq2_gain", "eq2_q", "eq3_freq", "eq3_gain", "eq3_q", "ring_mod", "fm_index", "comb", "gverb", "delay_detune", "delay_l", "delay_r", "delay_fb", "delay_wet", "lfo1_rate", "lfo1_depth", "lfo2_rate", "lfo2_depth", "lfo3_rate", "lfo3_depth", "dist_tone", "width"};
+static const short DEST2P[N_LFO1_DEST] = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 45, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 71, 72, 78, 79, 85, 86, 87};
 
 static const char *const FILTER_MODES[N_FILTER_MODE] = {"LP", "BP", "HP"};
 static const char *const OUT_SELS[N_OUT_SEL] = {"1", "2", "3"};
@@ -398,14 +416,16 @@ static const char *const LFO1_SYNCS[N_LFO1_SYNC] = {"OFF", "ON"};
 static const char *const LFO1_DIVS[N_LFO1_DIV] = {"1/32", "1/16T", "1/16", "1/8T", "1/8", "1/4T", "1/4", "1/2", "1 bar", "1/8D", "1/4D", "1/2D"};
 static const char *const LFO1_RETRIGS[N_LFO1_RETRIG] = {"OFF", "ON"};
 static const char *const LFO1_WAVES[N_LFO1_WAVE] = {"sin", "tri", "saw up", "saw dwn", "sqr", "s&h", "rnd"};
-static const char *const LFO1_DESTS[N_LFO1_DEST] = {"PITCH", "VEL→VOL", "VEL→CUT", "VEL→NOISE", "VEL→OSC", "VEL→P.ENV", "SRC OSC/NOISE", "OSC DECAY", "OSC SHAPE", "OSC X-MOD", "KEY TRACK", "P.ENV ATTACK", "P.ENV DECAY", "P.ENV SHAPE", "P.ENV AMOUNT", "NOISE COLOUR", "NOISE ATTACK", "NOISE DECAY", "NOISE SHAPE", "NOISE CUTOFF", "STUTTER LEN", "STUTTER STR", "RES", "CUTOFF", "F.ENV AMOUNT", "F.ENV DECAY", "DIST DRIVE", "EQ FREQ", "EQ GAIN", "EQ Q", "PAN", "VOL", "N.FILTER RES", "N.FENV AMOUNT", "N.FENV DECAY", "N.FILTER VEL", "EQ2 FREQ", "EQ2 GAIN", "EQ2 Q", "EQ3 FREQ", "EQ3 GAIN", "EQ3 Q", "RING MOD", "FM INDEX", "COMB", "GATED VERB", "DELAY DETUNE", "DELAY L", "DELAY R", "DELAY FB", "DELAY WET", "LFO1 RATE", "LFO1 DEPTH", "LFO2 RATE", "LFO2 DEPTH", "LFO3 RATE", "LFO3 DEPTH"};
+static const char *const LFO1_DESTS[N_LFO1_DEST] = {"PITCH", "VEL→VOL", "VEL→CUT", "VEL→NOISE", "VEL→OSC", "VEL→P.ENV", "SRC OSC/NOISE", "OSC DECAY", "OSC SHAPE", "OSC X-MOD", "KEY TRACK", "P.ENV ATTACK", "P.ENV DECAY", "P.ENV SHAPE", "P.ENV AMOUNT", "NOISE COLOUR", "NOISE ATTACK", "NOISE DECAY", "NOISE SHAPE", "NOISE CUTOFF", "STUTTER RATE", "STUTTER STR", "RES", "CUTOFF", "F.ENV AMOUNT", "F.ENV DECAY", "DIST DRIVE", "EQ FREQ", "EQ GAIN", "EQ Q", "PAN", "VOL", "N.FILTER RES", "N.FENV AMOUNT", "N.FENV DECAY", "N.FILTER VEL", "EQ2 FREQ", "EQ2 GAIN", "EQ2 Q", "EQ3 FREQ", "EQ3 GAIN", "EQ3 Q", "RING MOD", "FM INDEX", "COMB", "GATED VERB", "DELAY DETUNE", "DELAY L", "DELAY R", "DELAY FB", "DELAY WET", "LFO1 RATE", "LFO1 DEPTH", "LFO2 RATE", "LFO2 DEPTH", "LFO3 RATE", "LFO3 DEPTH", "DIST TONE", "WIDTH"};
 static const char *const LFO2_SYNCS[N_LFO2_SYNC] = {"OFF", "ON"};
 static const char *const LFO2_DIVS[N_LFO2_DIV] = {"1/32", "1/16T", "1/16", "1/8T", "1/8", "1/4T", "1/4", "1/2", "1 bar", "1/8D", "1/4D", "1/2D"};
 static const char *const LFO2_RETRIGS[N_LFO2_RETRIG] = {"OFF", "ON"};
 static const char *const LFO2_WAVES[N_LFO2_WAVE] = {"sin", "tri", "saw up", "saw dwn", "sqr", "s&h", "rnd"};
-static const char *const LFO2_DESTS[N_LFO2_DEST] = {"PITCH", "VEL→VOL", "VEL→CUT", "VEL→NOISE", "VEL→OSC", "VEL→P.ENV", "SRC OSC/NOISE", "OSC DECAY", "OSC SHAPE", "OSC X-MOD", "KEY TRACK", "P.ENV ATTACK", "P.ENV DECAY", "P.ENV SHAPE", "P.ENV AMOUNT", "NOISE COLOUR", "NOISE ATTACK", "NOISE DECAY", "NOISE SHAPE", "NOISE CUTOFF", "STUTTER LEN", "STUTTER STR", "RES", "CUTOFF", "F.ENV AMOUNT", "F.ENV DECAY", "DIST DRIVE", "EQ FREQ", "EQ GAIN", "EQ Q", "PAN", "VOL", "N.FILTER RES", "N.FENV AMOUNT", "N.FENV DECAY", "N.FILTER VEL", "EQ2 FREQ", "EQ2 GAIN", "EQ2 Q", "EQ3 FREQ", "EQ3 GAIN", "EQ3 Q", "RING MOD", "FM INDEX", "COMB", "GATED VERB", "DELAY DETUNE", "DELAY L", "DELAY R", "DELAY FB", "DELAY WET", "LFO1 RATE", "LFO1 DEPTH", "LFO2 RATE", "LFO2 DEPTH", "LFO3 RATE", "LFO3 DEPTH"};
+static const char *const LFO2_DESTS[N_LFO2_DEST] = {"PITCH", "VEL→VOL", "VEL→CUT", "VEL→NOISE", "VEL→OSC", "VEL→P.ENV", "SRC OSC/NOISE", "OSC DECAY", "OSC SHAPE", "OSC X-MOD", "KEY TRACK", "P.ENV ATTACK", "P.ENV DECAY", "P.ENV SHAPE", "P.ENV AMOUNT", "NOISE COLOUR", "NOISE ATTACK", "NOISE DECAY", "NOISE SHAPE", "NOISE CUTOFF", "STUTTER RATE", "STUTTER STR", "RES", "CUTOFF", "F.ENV AMOUNT", "F.ENV DECAY", "DIST DRIVE", "EQ FREQ", "EQ GAIN", "EQ Q", "PAN", "VOL", "N.FILTER RES", "N.FENV AMOUNT", "N.FENV DECAY", "N.FILTER VEL", "EQ2 FREQ", "EQ2 GAIN", "EQ2 Q", "EQ3 FREQ", "EQ3 GAIN", "EQ3 Q", "RING MOD", "FM INDEX", "COMB", "GATED VERB", "DELAY DETUNE", "DELAY L", "DELAY R", "DELAY FB", "DELAY WET", "LFO1 RATE", "LFO1 DEPTH", "LFO2 RATE", "LFO2 DEPTH", "LFO3 RATE", "LFO3 DEPTH", "DIST TONE", "WIDTH"};
 static const char *const LFO3_SYNCS[N_LFO3_SYNC] = {"OFF", "ON"};
 static const char *const LFO3_DIVS[N_LFO3_DIV] = {"1/32", "1/16T", "1/16", "1/8T", "1/8", "1/4T", "1/4", "1/2", "1 bar", "1/8D", "1/4D", "1/2D"};
 static const char *const LFO3_RETRIGS[N_LFO3_RETRIG] = {"OFF", "ON"};
 static const char *const LFO3_WAVES[N_LFO3_WAVE] = {"sin", "tri", "saw up", "saw dwn", "sqr", "s&h", "rnd"};
-static const char *const LFO3_DESTS[N_LFO3_DEST] = {"PITCH", "VEL→VOL", "VEL→CUT", "VEL→NOISE", "VEL→OSC", "VEL→P.ENV", "SRC OSC/NOISE", "OSC DECAY", "OSC SHAPE", "OSC X-MOD", "KEY TRACK", "P.ENV ATTACK", "P.ENV DECAY", "P.ENV SHAPE", "P.ENV AMOUNT", "NOISE COLOUR", "NOISE ATTACK", "NOISE DECAY", "NOISE SHAPE", "NOISE CUTOFF", "STUTTER LEN", "STUTTER STR", "RES", "CUTOFF", "F.ENV AMOUNT", "F.ENV DECAY", "DIST DRIVE", "EQ FREQ", "EQ GAIN", "EQ Q", "PAN", "VOL", "N.FILTER RES", "N.FENV AMOUNT", "N.FENV DECAY", "N.FILTER VEL", "EQ2 FREQ", "EQ2 GAIN", "EQ2 Q", "EQ3 FREQ", "EQ3 GAIN", "EQ3 Q", "RING MOD", "FM INDEX", "COMB", "GATED VERB", "DELAY DETUNE", "DELAY L", "DELAY R", "DELAY FB", "DELAY WET", "LFO1 RATE", "LFO1 DEPTH", "LFO2 RATE", "LFO2 DEPTH", "LFO3 RATE", "LFO3 DEPTH"};
+static const char *const LFO3_DESTS[N_LFO3_DEST] = {"PITCH", "VEL→VOL", "VEL→CUT", "VEL→NOISE", "VEL→OSC", "VEL→P.ENV", "SRC OSC/NOISE", "OSC DECAY", "OSC SHAPE", "OSC X-MOD", "KEY TRACK", "P.ENV ATTACK", "P.ENV DECAY", "P.ENV SHAPE", "P.ENV AMOUNT", "NOISE COLOUR", "NOISE ATTACK", "NOISE DECAY", "NOISE SHAPE", "NOISE CUTOFF", "STUTTER RATE", "STUTTER STR", "RES", "CUTOFF", "F.ENV AMOUNT", "F.ENV DECAY", "DIST DRIVE", "EQ FREQ", "EQ GAIN", "EQ Q", "PAN", "VOL", "N.FILTER RES", "N.FENV AMOUNT", "N.FENV DECAY", "N.FILTER VEL", "EQ2 FREQ", "EQ2 GAIN", "EQ2 Q", "EQ3 FREQ", "EQ3 GAIN", "EQ3 Q", "RING MOD", "FM INDEX", "COMB", "GATED VERB", "DELAY DETUNE", "DELAY L", "DELAY R", "DELAY FB", "DELAY WET", "LFO1 RATE", "LFO1 DEPTH", "LFO2 RATE", "LFO2 DEPTH", "LFO3 RATE", "LFO3 DEPTH", "DIST TONE", "WIDTH"};
+static const char *const DELAY_L_SYNCS[N_DELAY_L_SYNC] = {"OFF", "ON"};
+static const char *const DELAY_R_SYNCS[N_DELAY_R_SYNC] = {"OFF", "ON"};

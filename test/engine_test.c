@@ -224,6 +224,12 @@ int main(void)
     /* voice is an option param: the engine speaks the 0-based index ("0" = displayed "1") */
     CHECK(E->get_param(x, "voice", b, sizeof b) > 0 && !strcmp(b, "0"), "init voice index");
     CHECK(E->get_param(x, "base_note", b, sizeof b) > 0 && !strcmp(b, "36"), "init base_note");
+    /* 1.0.2 defaults: the four appended tail params + the renamed stutter knob (Task 1) */
+    CHECK(E->get_param(x, "dist_tone", b, sizeof b) > 0 && !strcmp(b, "127"), "init dist_tone");
+    CHECK(E->get_param(x, "width", b, sizeof b) > 0 && !strcmp(b, "0"), "init width");
+    CHECK(E->get_param(x, "delay_l_sync", b, sizeof b) > 0 && !strcmp(b, "0"), "init delay_l_sync");
+    CHECK(E->get_param(x, "delay_r_sync", b, sizeof b) > 0 && !strcmp(b, "0"), "init delay_r_sync");
+    CHECK(E->get_param(x, "stutter_length", b, sizeof b) > 0 && !strcmp(b, "64"), "init stutter_length");
     /* mirroring: edits land on the selected voice only (indices, not display numbers) */
     sp(x, "voice", 3); sp(x, "osc_decay", 42);
     sp(x, "voice", 1);
