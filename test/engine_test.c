@@ -451,6 +451,33 @@ int main(void)
     E->get_param(x, "noise_filter_display", b, sizeof b); CHECK(!strcmp(b, "18.0 kHz"), "noise cutoff display (%s)", b);
     sp(x, "filter_cutoff", 127);
 
+    /* ---- Task 6: three peaking EQ bands (40 Hz..12 kHz, ±18 dB, Q 0.5..6), Hz/kHz readouts ---- */
+    sp(x, "src_mix", 0); sp(x, "osc_decay", 110); sp(x, "pitch", 24);   /* a 261.6 Hz steady tone */
+    sp(x, "eq_freq", 64); sp(x, "eq_gain", 0); sp(x, "eq_q", 64);
+    sp(x, "eq2_freq", 42); sp(x, "eq2_q", 64);                          /* centre 40*300^(42/127) ~ 264 Hz */
+    sp(x, "eq3_freq", 64); sp(x, "eq3_gain", 0); sp(x, "eq3_q", 64);
+    sp(x, "eq2_gain", 0); note(x, 36, 127); Stat eq_base = run(x, 6);
+    sp(x, "eq2_gain", 63); note(x, 36, 127); Stat eq_boost = run(x, 6);
+    sp(x, "eq2_gain", -63); note(x, 36, 127); Stat eq_cut = run(x, 6);
+    CHECK(eq_boost.rms > eq_cut.rms * 1.3, "EQ2 boost vs cut (%.4f vs %.4f)", eq_boost.rms, eq_cut.rms);
+    CHECK(eq_boost.rms > eq_base.rms * 1.5 && eq_cut.rms < eq_base.rms * 0.7,
+          "EQ2 moves the level both ways (%.4f/%.4f vs %.4f)", eq_boost.rms, eq_cut.rms, eq_base.rms);
+    CHECK(eq_base.nan == 0 && eq_boost.nan == 0 && eq_cut.nan == 0, "EQ2 no NaN");
+    sp(x, "eq2_gain", 0); sp(x, "eq3_freq", 42);
+    sp(x, "eq3_gain", 63); note(x, 36, 127); Stat eq3_boost = run(x, 6);
+    sp(x, "eq3_gain", -63); note(x, 36, 127); Stat eq3_cut = run(x, 6);
+    CHECK(eq3_boost.rms > eq3_cut.rms * 1.3, "EQ3 boost vs cut (%.4f vs %.4f)", eq3_boost.rms, eq3_cut.rms);
+    /* gain 0 is transparent whatever the band's freq/Q (H(z) = 1; float rounding only) */
+    sp(x, "eq3_gain", 0); sp(x, "eq2_freq", 42); note(x, 36, 127); cap(x, A, 128);
+    sp(x, "eq2_freq", 90); note(x, 36, 127); cap(x, B, 128);
+    CHECK(capdiff(A, B, 128) < 1e-4, "gain-0 bands are transparent (%.6f)", capdiff(A, B, 128));
+    /* the Hz/kHz displays, on all three bands */
+    sp(x, "eq_freq", 0);  E->get_param(x, "eq_freq_display", b, sizeof b);  CHECK(!strcmp(b, "40 Hz"), "eq display lo (%s)", b);
+    sp(x, "eq_freq", 127); E->get_param(x, "eq_freq_display", b, sizeof b); CHECK(!strcmp(b, "12.0 kHz"), "eq display hi (%s)", b);
+    sp(x, "eq2_freq", 0); E->get_param(x, "eq2_freq_display", b, sizeof b); CHECK(!strcmp(b, "40 Hz"), "eq2 display lo (%s)", b);
+    sp(x, "eq3_freq", 127); E->get_param(x, "eq3_freq_display", b, sizeof b); CHECK(!strcmp(b, "12.0 kHz"), "eq3 display hi (%s)", b);
+    sp(x, "pitch", 0);   /* restore: the choke click test's step limit assumes the 65 Hz base tone */
+
     /* ---- the FX and the output (Task 5's block) ---- */
 /* prelude: one clean loud voice; everything Task 4 left dirty is restored/open */
 sp(x, "voice", 0); sp(x, "base_note", 36);

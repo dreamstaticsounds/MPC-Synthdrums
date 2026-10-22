@@ -245,6 +245,10 @@ static int get_param(void *p, const char *k, char *buf, int n)
                     hz_str(20.0f * powf(900.0f, v * (1.0f / 127.0f)), t, sizeof t);
                     return put(buf, n, t);
                 }
+                if (j == P_EQ_FREQ || j == P_EQ2_FREQ || j == P_EQ3_FREQ) {
+                    hz_str(40.0f * powf(300.0f, v * (1.0f / 127.0f)), t, sizeof t);
+                    return put(buf, n, t);
+                }
                 return 0;   /* unknown dynamic display: the wrapper's default numeric path */
             }
         }

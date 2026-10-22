@@ -13,7 +13,7 @@
  *  - the noise: a white LFSR -> the colour's tilt -> its own amp env -> its own biquad -> the osc/noise mix
  *  - the filters: each branch (osc, noise) has its own resonant 12 dB/oct biquad (LP/BP/HP) and its own
  *    one-shot envelope; the mix happens after both
- *  - the effects: the stutter gate -> the waveshaper -> the peaking EQ -> the pan and the level
+ *  - the effects: the stutter gate -> the waveshaper -> the three peaking EQ bands -> the pan and the level
  *  - the velocity routings: m = 1 - depth/127 + (depth/127)*vel on the amp, the two sources and the penv depth */
 #include <math.h>
 #include <stdint.h>
@@ -146,11 +146,13 @@ void sd_voice_reset(Voice *v)
     v->nfenv_t = 0.0f;
     /* the stutter's gate phase: per-hit state, so a retrigger starts the gate from the same place */
     v->stut.phase = 0.0f;
-    /* the EQ's delay line: per-hit state too (the coefficients are recomputed every block) */
-    v->eq.x1 = 0.0f;
-    v->eq.y1 = 0.0f;
-    v->eq.bx1 = 0.0f;
-    v->eq.by1 = 0.0f;
+    /* the EQ's delay lines: per-hit state too (the coefficients are recomputed every block) */
+    for (int i = 0; i < 3; i++) {
+        v->eq[i].x1 = 0.0f;
+        v->eq[i].y1 = 0.0f;
+        v->eq[i].bx1 = 0.0f;
+        v->eq[i].by1 = 0.0f;
+    }
     /* the choke fade: a fresh hit is free (the fade only starts when another voice chokes this one) */
     v->choke_gain = 1.0f;
     v->choke_t = 0.0f;
@@ -238,9 +240,16 @@ void sd_voice_render(Voice *v, float *bus, int frames)
     /* The peaking EQ: the bell's frequency (a log sweep, 40 Hz .. 12 kHz), its gain (+/-18 dB) and its
      * width (Q 0.5 .. 6, logarithmic: a Q knob is a musical control, so its ends are far apart and its
      * middle is where a bell usually sits). */
-    const float eq_hz = EQ_MIN_HZ * powf(EQ_MAX_HZ / EQ_MIN_HZ, VP(v, P_EQ_FREQ) * (1.0f / 127.0f));
-    const float eq_db = VP(v, P_EQ_GAIN) * (18.0f / 63.0f);
-    const float eq_q = 0.5f * powf(12.0f, VP(v, P_EQ_Q) * (1.0f / 127.0f));
+    /* The three EQ bands' settings: the same mapping each (freq 40 Hz..12 kHz log, gain ±18 dB, Q 0.5..6). */
+    const float eq_hz[3] = {
+        EQ_MIN_HZ * powf(EQ_MAX_HZ / EQ_MIN_HZ, VP(v, P_EQ_FREQ) * (1.0f / 127.0f)),
+        EQ_MIN_HZ * powf(EQ_MAX_HZ / EQ_MIN_HZ, VP(v, P_EQ2_FREQ) * (1.0f / 127.0f)),
+        EQ_MIN_HZ * powf(EQ_MAX_HZ / EQ_MIN_HZ, VP(v, P_EQ3_FREQ) * (1.0f / 127.0f)) };
+    const float eq_db[3] = { VP(v, P_EQ_GAIN) * (18.0f / 63.0f), VP(v, P_EQ2_GAIN) * (18.0f / 63.0f),
+                             VP(v, P_EQ3_GAIN) * (18.0f / 63.0f) };
+    const float eq_q[3] = { 0.5f * powf(12.0f, VP(v, P_EQ_Q) * (1.0f / 127.0f)),
+                            0.5f * powf(12.0f, VP(v, P_EQ2_Q) * (1.0f / 127.0f)),
+                            0.5f * powf(12.0f, VP(v, P_EQ3_Q) * (1.0f / 127.0f)) };
     /* The output stage: the pan (equal power: -64 = hard left, 0 = centre, +63 = hard right) and the
      * level (0 .. ~1.4x, the init patch's 100 is a little over unity). The "out_sel" knob is state-only:
      * the MPC sums its three output buses to the main pair, so all three selections sound the same. */
@@ -269,8 +278,8 @@ void sd_voice_render(Voice *v, float *bus, int frames)
     filt_set(&v->filt, clampf(cut_base + v->filt.env, FILT_MIN_HZ, FILT_MAX_HZ), q, mode);
     filt_set(&v->nfil, clampf(ncut_base + v->nfil.env, FILT_MIN_HZ, FILT_MAX_HZ), nq, nmode);
 
-    /* The EQ's coefficients: once a block (the EQ has no envelope). */
-    eq_set(&v->eq, eq_hz, eq_db, eq_q);
+    /* The EQ's coefficients: once a block (the EQ has no envelope), one set per band. */
+    for (i = 0; i < 3; i++) eq_set(&v->eq[i], eq_hz[i], eq_db[i], eq_q[i]);
 
     for (i = 0; i < frames; i++) {
         float w, inc, osc, noise, out;
@@ -330,8 +339,10 @@ void sd_voice_render(Voice *v, float *bus, int frames)
         /* The waveshaper: the drive knob's saturation (exactly unity when the knob is at zero). */
         out = fx_dist(out, drive01);
 
-        /* The peaking EQ: the one band of the FX section. */
-        out = eq_step(&v->eq, out);
+        /* The three peaking EQ bands, in series (the FX section's EQ). */
+        out = eq_step(&v->eq[0], out);
+        out = eq_step(&v->eq[1], out);
+        out = eq_step(&v->eq[2], out);
 
         /* The choke fade: it lives in the voice's own output path (never in the master bus, which would
          * fade the choking voice's own hit as well). The fade is a raised cosine over 5 ms, so it starts

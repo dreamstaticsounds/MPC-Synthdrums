@@ -86,7 +86,7 @@ PARAMS = [
     # DIST
     P("dist_drive", "DIST DRIVE", 0, 127, 0),
     # EQ
-    P("eq_freq", "EQ FREQ", 0, 127, 64),
+    P("eq_freq", "EQ FREQ", 0, 127, 64, dynamic_display=True),
     P("eq_gain", "EQ GAIN", -63, 63, 0),
     P("eq_q", "EQ Q", 0, 127, 64),
     # OUTPUT
@@ -114,6 +114,15 @@ PARAMS = [
     P("nfilt_env_amount", "N.FENV AMOUNT", -63, 63, 0),
     P("nfilt_env_decay", "N.FENV DECAY", 0, 127, 64),
     P("nfilt_vel", "N.FILTER VEL", 0, 127, 0),
+
+    # EQ bands 2 and 3 (band 1 keeps eq_freq/eq_gain/eq_q): the same 40 Hz..12 kHz log sweep,
+    # ±18 dB and Q 0.5..6 mapping as band 1, appended so 1.0.0 patches load unchanged.
+    P("eq2_freq", "EQ2 FREQ", 0, 127, 64, dynamic_display=True),
+    P("eq2_gain", "EQ2 GAIN", -63, 63, 0),
+    P("eq2_q", "EQ2 Q", 0, 127, 64),
+    P("eq3_freq", "EQ3 FREQ", 0, 127, 64, dynamic_display=True),
+    P("eq3_gain", "EQ3 GAIN", -63, 63, 0),
+    P("eq3_q", "EQ3 Q", 0, 127, 64),
 ]
 
 for p in PARAMS:   # momentary keys: a plain 0..1 with no int display

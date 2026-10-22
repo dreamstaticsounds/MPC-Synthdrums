@@ -88,7 +88,7 @@ typedef struct {
     Filt nfil;              /* the noise branch's filter (same biquad, its own envelope) */
     float nfenv_t;          /* the noise filter env's age, in seconds */
     Stutter stut;           /* the stutter gate's phase */
-    PeakEQ eq;              /* the peaking EQ's coefficients and delay line */
+    PeakEQ eq[3];           /* the three peaking EQ bands' coefficients and delay lines, in series */
     float choke_gain;       /* the choke fade's multiplier: 1 = free, 0 = silenced */
     float choke_t;          /* the choke fade's age, in seconds */
     int choke_fading;       /* the choke fade is running: the voice is on its way to silence */

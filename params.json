@@ -237,7 +237,8 @@
    "default": 64,
    "min": 0,
    "max": 127,
-   "display": "int"
+   "display": "int",
+   "dynamic_display": true
   },
   {
    "key": "eq_gain",
@@ -434,6 +435,56 @@
    "key": "nfilt_vel",
    "name": "N.FILTER VEL",
    "default": 0,
+   "min": 0,
+   "max": 127,
+   "display": "int"
+  },
+  {
+   "key": "eq2_freq",
+   "name": "EQ2 FREQ",
+   "default": 64,
+   "min": 0,
+   "max": 127,
+   "display": "int",
+   "dynamic_display": true
+  },
+  {
+   "key": "eq2_gain",
+   "name": "EQ2 GAIN",
+   "default": 0,
+   "min": -63,
+   "max": 63,
+   "display": "int"
+  },
+  {
+   "key": "eq2_q",
+   "name": "EQ2 Q",
+   "default": 64,
+   "min": 0,
+   "max": 127,
+   "display": "int"
+  },
+  {
+   "key": "eq3_freq",
+   "name": "EQ3 FREQ",
+   "default": 64,
+   "min": 0,
+   "max": 127,
+   "display": "int",
+   "dynamic_display": true
+  },
+  {
+   "key": "eq3_gain",
+   "name": "EQ3 GAIN",
+   "default": 0,
+   "min": -63,
+   "max": 63,
+   "display": "int"
+  },
+  {
+   "key": "eq3_q",
+   "name": "EQ3 Q",
+   "default": 64,
    "min": 0,
    "max": 127,
    "display": "int"
