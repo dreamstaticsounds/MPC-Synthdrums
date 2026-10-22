@@ -227,13 +227,14 @@ def readout(pg, key, rect, px=24):
 # ---------------------------------------------------------------- the common parts
 
 
-def knob_row(pg, items, x0, y0, w, size=76, px=18):
-    """a row of parameter knobs, evenly spread over w; items: (key, label)"""
+def knob_row(pg, items, x0, y0, w, size=76, px=18, lcd_w=84):
+    """a row of parameter knobs, evenly spread over w; items: (key, label); lcd_w widens the value
+    windows for knobs whose readout runs long (kHz/ms strings need more than 84)"""
     n = len(items)
     step = w / float(n)
     for i, (key, label) in enumerate(items):
         cx = x0 + step * (i + 0.5)
-        knob(pg, key, cx, y0, size, label, lcd_rect=(cx - 42, y0 + size / 2 + 8, 84, 30),
+        knob(pg, key, cx, y0, size, label, lcd_rect=(cx - lcd_w / 2, y0 + size / 2 + 8, lcd_w, 30),
              label_w=min(step - 8, 150), label_px=px)
 
 
@@ -301,29 +302,49 @@ def pitch_page():
 def filter_page():
     pg = Page("FILTER")
     text(pg, (1272, 27), "FILTER", 20, INK_DIM, "rm")
-    panel(pg, (16, 58, 380, 212), "STUTTER")
-    knob_row(pg, [("stutter_length", "STUTTER LEN"), ("stutter_strength", "STUTTER STR")], 28, 176, 356, 56)
-    panel(pg, (408, 58, 856, 212), "FILTER")
-    radio(pg, "filter_mode", [(424, 92 + 48 * i, 128, 44) for i in range(3)], gen_params.FILTER_MODES, "key", 17)
-    knob_row(pg, [("filter_res", "RES"), ("filter_cutoff", "CUTOFF"), ("fenv_amount", "F.ENV AMOUNT"),
-                   ("fenv_decay", "F.ENV DECAY")], 580, 176, 664, 56)
+    # the oscillator filter: mode keys share the title band, its five knobs span the panel
+    panel(pg, (16, 48, 724, 272), "OSC FILTER")
+    radio(pg, "filter_mode", [(206 + 84 * i, 54, 76, 44) for i in range(3)], gen_params.FILTER_MODES, "key", 17)
+    knob_row(pg, [("filter_cutoff", "CUTOFF"), ("filter_res", "RES"), ("fenv_amount", "F.ENV AMOUNT"),
+                  ("fenv_decay", "F.ENV DECAY"), ("vel_to_cut", "VEL→CUT")], 32, 204, 700, lcd_w=112)
+    # the noise branch's own filter, same shape; its readouts are kHz too
+    panel(pg, (16, 336, 724, 272), "NOISE FILTER")
+    radio(pg, "nfilt_mode", [(206 + 84 * i, 342, 76, 44) for i in range(3)], gen_params.FILTER_MODES, "key", 17)
+    knob_row(pg, [("noise_filter", "NOISE CUTOFF"), ("nfilt_res", "N.FILTER RES"),
+                  ("nfilt_env_amount", "N.FENV AMOUNT"), ("nfilt_env_decay", "N.FENV DECAY"),
+                  ("nfilt_vel", "N.FILTER VEL")], 32, 492, 700, lcd_w=112)
+    # the stutter, stacked in a narrow strip beside them
+    panel(pg, (752, 48, 124, 564), "STUTTER")
+    knob(pg, "stutter_length", 814, 259, 76, "STUTTER LEN", label_w=112)
+    knob(pg, "stutter_strength", 814, 424, 76, "STUTTER STR", label_w=112)
+    # the three peaking bands: rows = the parameter, columns = the band; the freq windows are wide
+    # enough for the longest readout ("12.0 kHz")
+    panel(pg, (888, 48, 376, 564), "EQ")
+    knob_row(pg, [("eq_freq", "EQ FREQ"), ("eq2_freq", "EQ2 FREQ"), ("eq3_freq", "EQ3 FREQ")],
+             888, 170, 376, lcd_w=112)
+    knob_row(pg, [("eq_gain", "EQ GAIN"), ("eq2_gain", "EQ2 GAIN"), ("eq3_gain", "EQ3 GAIN")], 888, 341, 376)
+    knob_row(pg, [("eq_q", "EQ Q"), ("eq2_q", "EQ2 Q"), ("eq3_q", "EQ3 Q")], 888, 512, 376)
     return pg
 
 
 def fx_page():
     pg = Page("FX")
     text(pg, (1272, 27), "FX", 20, INK_DIM, "rm")
-    panel(pg, (16, 58, 340, 212), "DIST")
-    knob(pg, "dist_drive", 186, 176, 62, "DIST DRIVE", lcd_rect=(144, 213, 84, 30), label_w=160)
-    panel(pg, (368, 58, 520, 212), "EQ")
-    knob_row(pg, [("eq_freq", "EQ FREQ"), ("eq_gain", "EQ GAIN"), ("eq_q", "EQ Q")], 380, 176, 496, 56)
-    panel(pg, (900, 58, 364, 212), "OUTPUT")
-    knob_row(pg, [("out_pan", "PAN"), ("out_vol", "VOL")], 912, 152, 340, 54)
-    radio(pg, "out_sel", [(916 + 116 * i, 220, 108, 44) for i in range(3)], gen_params.OUT_SELS, "key", 17)
-    panel(pg, (16, 282, 340, 330), "CHOKE")
-    radio(pg, "choke", [(40, 324 + 50 * i, 292, 44) for i in range(5)], gen_params.CHOKE_NAMES, "key", 17)
-    text(pg, (186, 578), "RETRIGGERING A VOICE", 15, INK_DIM)
-    text(pg, (186, 598), "SILENCES ITS GROUP", 15, INK_DIM)
+    # the chain in order, one knob per stage: dist -> ring mod -> FM -> comb -> gated reverb
+    panel(pg, (16, 48, 240, 191), "DIST")
+    knob(pg, "dist_drive", 136, 155, 76, "DIST DRIVE", lcd_rect=(88, 201, 96, 30), label_w=216)
+    panel(pg, (268, 48, 240, 191), "RING MOD")
+    knob(pg, "ring_mod", 388, 155, 76, "FREQ", lcd_rect=(340, 201, 96, 30), label_w=216)
+    panel(pg, (520, 48, 240, 191), "FM")
+    knob(pg, "fm_index", 640, 155, 76, "INDEX", lcd_rect=(592, 201, 96, 30), label_w=216)
+    panel(pg, (772, 48, 240, 191), "COMB FLTR")
+    knob(pg, "comb", 892, 155, 76, "TIME", lcd_rect=(844, 201, 96, 30), label_w=216)
+    panel(pg, (1024, 48, 240, 191), "GATED VERB")
+    knob(pg, "gverb", 1144, 155, 76, "WET MIX", lcd_rect=(1096, 201, 96, 30), label_w=216)
+    # the delay is last in the chain, so it gets the whole row; its readouts are milliseconds
+    panel(pg, (16, 255, 1248, 357), "DELAY")
+    knob_row(pg, [("delay_detune", "DELAY DETUNE"), ("delay_l", "DELAY L"), ("delay_r", "DELAY R"),
+                  ("delay_fb", "DELAY FB"), ("delay_wet", "DELAY WET")], 16, 448, 1248, lcd_w=104)
     return pg
 
 
@@ -355,9 +376,10 @@ PAGES = [osc_page, pitch_page, filter_page, fx_page, glb_page]
 QLINK_BANKS = {
     "OSC": [["src_mix", "osc_decay", "osc_shape", "osc_xmod"]],
     "PITCH": [["pitch", "pitch_track", "penv_attack", "penv_decay", "penv_shape", "penv_amount"]],
-    "FILTER": [["filter_mode", "filter_res", "filter_cutoff", "fenv_amount", "fenv_decay", "stutter_length",
-                "stutter_strength"]],   # no "voice": the strip's selector is gone (pad hits select)
-    "FX": [["dist_drive", "eq_freq", "eq_gain", "eq_q", "out_pan", "out_vol", "out_sel", "choke"]],
+    "FILTER": [["filter_mode", "filter_cutoff", "filter_res", "fenv_amount", "fenv_decay", "vel_to_cut"],
+               ["nfilt_mode", "noise_filter", "nfilt_res", "nfilt_env_amount", "nfilt_env_decay", "nfilt_vel"]],
+    "FX": [["dist_drive", "ring_mod", "fm_index", "comb", "gverb", "delay_detune", "delay_l", "delay_r"],
+           ["delay_fb", "delay_wet"]],
     "GLB": [["base_note"]],
 }
 
