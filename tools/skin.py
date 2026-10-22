@@ -6,15 +6,15 @@
     python3 tools/skin.py --preview DIR         draws each page with its controls at their defaults (offline check)
 
 Pages (1280 x 628, MPC's whole plugin area): OSC, PITCH, FILTER, FX (the four voice pages) and GLB (the global
-page). Every voice page opens with the same strip: the VOICE selector (12 segments), the selected voice's name
-and the TRIG key (it auditions that voice); the panels below it are the original DSK SynthDrums' sections in the
-original's order, with the original's short labels.
+page). Each page shows only its right-aligned name: hitting a pad selects that voice for editing (and plays it),
+so the old VOICE selector strip (segments, name, TRIG) is gone and its space goes to bigger controls. The panels
+carry the original DSK SynthDrums' sections in the original's order, with the original's short labels.
 
 Look: the original's black-and-orange panel: near-black ground, dark grey panels, orange frames and tabs, warm
 white lettering, dark value windows. The caps: tools/caps.py (aluminium-top knobs). The lettering: DejaVu Sans
-Condensed Bold (art/fonts), never smaller than 16 px. The displays are static art (ImageDraw into the page's
-background): the oscillator's waveform, the pitch and noise envelopes, the filter's response and the EQ's curve -
-the original's graphic displays, drawn once."""
+Condensed Bold (art/fonts): 18 px labels, 24 px value windows. No curve displays (1.0.1): the panels are static
+art drawn once into the page's background (ImageDraw); the knobs, keys, option rows and value windows are live
+controls over it."""
 import json
 import math
 import os
@@ -177,7 +177,7 @@ def knob(pg, key, cx, cy, size, label=None, endless=False, lcd_rect=None, label_
         knob_scale(pg, cx, cy, size / 2, bipolar)
     pg.add("knob", key, (cx - size / 2, cy - size / 2, size, size), endless=endless)
     if lcd_rect is None:
-        lcd_rect = (cx - 38, cy + size / 2 + 8, 76, 26)
+        lcd_rect = (cx - 42, cy + size / 2 + 8, 84, 30)
     if lcd_rect:
         value(pg, key, lcd_rect)
 
@@ -219,159 +219,25 @@ def momentary(pg, key, rect, word, px=16, arrow=None):
     pg.add("key", key, rect, word=word, px=px, colour=ACCENT, arrow=arrow)
 
 
-def readout(pg, key, rect, px=22):
+def readout(pg, key, rect, px=24):
     lcd(pg, rect)
     pg.add("value", key, rect, px=px, left=True)
 
 
 # ---------------------------------------------------------------- the common parts
-def voice_strip(pg, title):
-    """the top strip of every voice page: the VOICE selector, the voice's name, the TRIG key"""
-    text(pg, (18, 27), "VOICE", 17, INK_DIM, "lm")
-    radio(pg, "voice", [(80 + 46 * i, 9, 42, 34) for i in range(12)], gen_params.VOICE_NAMES, "key", 16)
-    readout(pg, "voice_name", (644, 9, 130, 34), 20)
-    momentary(pg, "trig", (792, 9, 96, 34), "TRIG", 18)
-    text(pg, (1272, 27), title, 20, INK_DIM, "rm")
 
 
-def knob_row(pg, items, x0, y0, w, size=58, px=16):
+def knob_row(pg, items, x0, y0, w, size=76, px=18):
     """a row of parameter knobs, evenly spread over w; items: (key, label)"""
     n = len(items)
     step = w / float(n)
     for i, (key, label) in enumerate(items):
         cx = x0 + step * (i + 0.5)
-        knob(pg, key, cx, y0, size, label, lcd_rect=(cx - 38, y0 + size / 2 + 8, 76, 26),
+        knob(pg, key, cx, y0, size, label, lcd_rect=(cx - 42, y0 + size / 2 + 8, 84, 30),
              label_w=min(step - 8, 150), label_px=px)
 
 
 # ---------------------------------------------------------------- the static display art
-def plot_grid(pg, area, nx=8, ny=4):
-    """the graph paper inside a display block"""
-    x0, y0, w, h = area
-    for i in range(nx + 1):
-        x = x0 + w * i / float(nx)
-        pg.d.line((x, y0, x, y0 + h), fill=GRID, width=1)
-    for i in range(ny + 1):
-        y = y0 + h * i / float(ny)
-        pg.d.line((x0, y, x0 + w, y), fill=GRID, width=1)
-
-
-def plot_curve(pg, area, ys, colour=ACCENT, width=3):
-    """a curve over the display's width: ys are 0..1 (0 = the top)"""
-    x0, y0, w, h = area
-    n = len(ys)
-    pts = [(x0 + w * i / float(n - 1), y0 + h * ys[i]) for i in range(n)]
-    pg.d.line(pts, fill=colour, width=width, joint="curve")
-
-
-def wave_art(pg, rect):
-    """the oscillator's display: the sine and the curved ramp it morphs into"""
-    area = display(pg, rect, "OSCILLATOR DISPLAY")
-    x0, y0, w, h = area
-    plot_grid(pg, area)
-    mid = y0 + h / 2
-    pg.d.line((x0, mid, x0 + w, mid), fill=(70, 66, 62), width=1)
-    n = 320
-    sine, ramp = [], []
-    for i in range(n):
-        t = i / float(n - 1)
-        a = 2.5 * math.pi * t
-        sine.append(0.5 - 0.40 * math.sin(a))
-        # the curved ramp: a fast curved rise, a slow fall (the shape the oscillator morphs into)
-        p = (t * 2.5) % 1.0
-        if p < 0.25:
-            ramp.append(0.90 - 0.80 * (p / 0.25) ** 0.55)
-        else:
-            ramp.append(0.10 + 0.80 * ((p - 0.25) / 0.75) ** 1.7)
-    plot_curve(pg, area, sine, ACCENT, 3)
-    plot_curve(pg, area, ramp, ACCENT_DIM, 2)
-    text(pg, (x0 + 8, y0 + 14), "SINE  ·  RAMP", 16, INK_DIM, "lm")
-
-
-def pitch_env_art(pg, rect):
-    """the pitch envelope's display: the drum's pitch sweep down to its note"""
-    area = display(pg, rect, "PITCH ENVELOPE")
-    x0, y0, w, h = area
-    plot_grid(pg, area)
-    pg.d.line((x0, y0 + h - 1, x0 + w, y0 + h - 1), fill=(70, 66, 62), width=1)
-    n = 320
-    ys = []
-    for i in range(n):
-        t = i / float(n - 1)
-        ys.append(0.94 - 0.88 * math.exp(-4.2 * t))
-    plot_curve(pg, area, ys, ACCENT, 3)
-    text(pg, (x0 + 8, y0 + 14), "SWEEP", 16, INK_DIM, "lm")
-
-
-def noise_env_art(pg, rect):
-    """the noise envelope's display: a fast attack, then the decay"""
-    area = display(pg, rect, "NOISE ENVELOPE")
-    x0, y0, w, h = area
-    plot_grid(pg, area)
-    pg.d.line((x0, y0 + h - 1, x0 + w, y0 + h - 1), fill=(70, 66, 62), width=1)
-    n = 320
-    ys = []
-    for i in range(n):
-        t = i / float(n - 1)
-        attack = min(1.0, t / 0.04)
-        ys.append(0.94 - 0.88 * attack * math.exp(-3.4 * max(0.0, t - 0.04)))
-    plot_curve(pg, area, ys, ACCENT, 3)
-    text(pg, (x0 + w - 8, y0 + 14), "DECAY", 16, INK_DIM, "rm")
-
-
-def filter_art(pg, rect):
-    """the filter's display: a resonant 12 dB/oct low-pass"""
-    area = display(pg, rect, "FILTER RESPONSE")
-    x0, y0, w, h = area
-    plot_grid(pg, area)
-    lo, hi = -48.0, 18.0
-
-    def y_of(db):
-        return (hi - db) / (hi - lo)
-
-    pg.d.line((x0, y0 + h * y_of(0.0), x0 + w, y0 + h * y_of(0.0)), fill=(70, 66, 62), width=1)
-    n = 320
-    ys = []
-    fc, q = 1500.0, 4.0
-    for i in range(n):
-        t = i / float(n - 1)
-        x = 20.0 * (1000.0 ** t)          # 20 Hz .. 20 kHz, log
-        xx = x / fc
-        mag = 1.0 / math.sqrt((1 - xx * xx) ** 2 + (xx / q) ** 2)
-        db = 20 * math.log10(max(mag, 1e-6))
-        ys.append(y_of(min(hi, max(lo, db))))
-    plot_curve(pg, area, ys, ACCENT, 3)
-    text(pg, (x0 + 8, y0 + 14), "LP 12 dB/oct", 16, INK_DIM, "lm")
-    text(pg, (x0 + 8, y0 + h - 12), "20 Hz", 16, INK_DIM, "lm")
-    text(pg, (x0 + w - 8, y0 + 14), "20 kHz", 16, INK_DIM, "rm")
-
-
-def eq_art(pg, rect):
-    """the EQ's display: a peaking band"""
-    area = display(pg, rect, "EQ RESPONSE")
-    x0, y0, w, h = area
-    plot_grid(pg, area)
-    lo, hi = -24.0, 24.0
-
-    def y_of(db):
-        return (hi - db) / (hi - lo)
-
-    pg.d.line((x0, y0 + h * y_of(0.0), x0 + w, y0 + h * y_of(0.0)), fill=(70, 66, 62), width=1)
-    n = 320
-    ys = []
-    f0, q, gain = 1000.0, 1.2, 9.0
-    alpha = 1.0 / (2.0 * q)
-    A = 10 ** (gain / 40.0)
-    for i in range(n):
-        t = i / float(n - 1)
-        x = 20.0 * (1000.0 ** t)          # 20 Hz .. 20 kHz, log
-        xx = x / f0
-        num = math.hypot(1 - xx * xx, alpha * A * xx)
-        den = math.hypot(1 - xx * xx, alpha * xx)
-        db = 20 * math.log10(max(num / den, 1e-6))
-        ys.append(y_of(min(hi, max(lo, db))))
-    plot_curve(pg, area, ys, ACCENT, 3)
-    text(pg, (x0 + 8, y0 + 14), "PEAK", 16, INK_DIM, "lm")
 
 
 def keyboard_art(pg, rect):
@@ -402,61 +268,62 @@ def keyboard_art(pg, rect):
 # ---------------------------------------------------------------- the pages
 def osc_page():
     pg = Page("OSC")
-    voice_strip(pg, "OSC")
-    panel(pg, (16, 58, 560, 212), "CONTROL")
-    knob_row(pg, [("vel_to_vol", "VEL→VOL"), ("vel_to_cut", "VEL→CUT"), ("vel_to_noise", "VEL→NOISE"),
-                   ("vel_to_osc", "VEL→OSC"), ("vel_to_penv", "VEL→P.ENV")], 28, 176, 536, 54)
-    panel(pg, (588, 58, 268, 212), "SOURCE")
-    knob(pg, "src_mix", 722, 176, 62, "SRC OSC/NOISE", lcd_rect=(684, 215, 76, 26), label_w=220)
-    panel(pg, (868, 58, 396, 212), "OSCILLATOR")
-    knob_row(pg, [("osc_decay", "OSC DECAY"), ("osc_shape", "OSC SHAPE"), ("osc_xmod", "OSC X-MOD")], 880, 176, 372, 56)
-    wave_art(pg, (16, 282, 1248, 330))
+    text(pg, (1272, 27), "OSC", 20, INK_DIM, "rm")
+    # row 1: SOURCE | OSCILLATOR | the voice-editing keys (a Q-Link press must never fire these, so
+    # they stay out of QLINK_BANKS)
+    panel(pg, (16, 48, 216, 252), "SOURCE")
+    knob(pg, "src_mix", 124, 185, 76, "SRC OSC/NOISE", label_w=200)
+    panel(pg, (244, 48, 560, 252), "OSCILLATOR")
+    knob_row(pg, [("osc_decay", "OSC DECAY"), ("osc_shape", "OSC SHAPE"), ("osc_xmod", "OSC X-MOD")], 260, 185, 528)
+    panel(pg, (816, 48, 448, 252), "VOICE MANAGEMENT")
+    momentary(pg, "voice_init", (832, 160, 180, 62), "INIT VOICE", 20)
+    momentary(pg, "voice_copy", (1020, 160, 110, 62), "COPY", 20)
+    momentary(pg, "voice_paste", (1138, 160, 110, 62), "PASTE", 20)
+    text(pg, (1040, 258), "EDITS THE SELECTED VOICE", 16, INK_DIM)
+    # row 2: NOISE (moved here from the PITCH page; noise_filter joins the FILTER page)
+    panel(pg, (16, 316, 1248, 296), "NOISE")
+    knob_row(pg, [("noise_colour", "NOISE COLOUR"), ("noise_attack", "NOISE ATTACK"),
+                  ("noise_decay", "NOISE DECAY"), ("noise_shape", "NOISE SHAPE")], 16, 475, 1248)
     return pg
 
 
 def pitch_page():
     pg = Page("PITCH")
-    voice_strip(pg, "PITCH")
-    panel(pg, (16, 58, 700, 212), "PITCH")
+    text(pg, (1272, 27), "PITCH", 20, INK_DIM, "rm")
+    # one section per page: its six knobs at full size, centered in the whole page
+    panel(pg, (16, 48, 1248, 564), "PITCH")
     knob_row(pg, [("pitch", "PITCH"), ("pitch_track", "KEY TRACK"), ("penv_attack", "P.ENV ATTACK"),
                    ("penv_decay", "P.ENV DECAY"), ("penv_shape", "P.ENV SHAPE"), ("penv_amount", "P.ENV AMOUNT")],
-             28, 176, 676, 54)
-    panel(pg, (728, 58, 536, 212), "NOISE")
-    knob_row(pg, [("noise_colour", "NOISE COLOUR"), ("noise_attack", "NOISE ATTACK"), ("noise_decay", "NOISE DECAY"),
-                   ("noise_shape", "NOISE SHAPE"), ("noise_filter", "NOISE FILTER")], 740, 176, 512, 54)
-    pitch_env_art(pg, (16, 282, 616, 330))
-    noise_env_art(pg, (644, 282, 620, 330))
+             16, 337, 1248, 86)
     return pg
 
 
 def filter_page():
     pg = Page("FILTER")
-    voice_strip(pg, "FILTER")
+    text(pg, (1272, 27), "FILTER", 20, INK_DIM, "rm")
     panel(pg, (16, 58, 380, 212), "STUTTER")
     knob_row(pg, [("stutter_length", "STUTTER LEN"), ("stutter_strength", "STUTTER STR")], 28, 176, 356, 56)
     panel(pg, (408, 58, 856, 212), "FILTER")
-    radio(pg, "filter_mode", [(424, 92 + 42 * i, 128, 36) for i in range(3)], gen_params.FILTER_MODES, "key", 17)
+    radio(pg, "filter_mode", [(424, 92 + 48 * i, 128, 44) for i in range(3)], gen_params.FILTER_MODES, "key", 17)
     knob_row(pg, [("filter_res", "RES"), ("filter_cutoff", "CUTOFF"), ("fenv_amount", "F.ENV AMOUNT"),
                    ("fenv_decay", "F.ENV DECAY")], 580, 176, 664, 56)
-    filter_art(pg, (16, 282, 1248, 330))
     return pg
 
 
 def fx_page():
     pg = Page("FX")
-    voice_strip(pg, "FX")
+    text(pg, (1272, 27), "FX", 20, INK_DIM, "rm")
     panel(pg, (16, 58, 340, 212), "DIST")
-    knob(pg, "dist_drive", 186, 176, 62, "DIST DRIVE", lcd_rect=(148, 215, 76, 26), label_w=160)
+    knob(pg, "dist_drive", 186, 176, 62, "DIST DRIVE", lcd_rect=(144, 213, 84, 30), label_w=160)
     panel(pg, (368, 58, 520, 212), "EQ")
     knob_row(pg, [("eq_freq", "EQ FREQ"), ("eq_gain", "EQ GAIN"), ("eq_q", "EQ Q")], 380, 176, 496, 56)
     panel(pg, (900, 58, 364, 212), "OUTPUT")
     knob_row(pg, [("out_pan", "PAN"), ("out_vol", "VOL")], 912, 152, 340, 54)
-    radio(pg, "out_sel", [(916 + 116 * i, 220, 108, 32) for i in range(3)], gen_params.OUT_SELS, "key", 17)
+    radio(pg, "out_sel", [(916 + 116 * i, 220, 108, 44) for i in range(3)], gen_params.OUT_SELS, "key", 17)
     panel(pg, (16, 282, 340, 330), "CHOKE")
-    radio(pg, "choke", [(40, 330 + 50 * i, 292, 42) for i in range(5)], gen_params.CHOKE_NAMES, "key", 17)
+    radio(pg, "choke", [(40, 324 + 50 * i, 292, 44) for i in range(5)], gen_params.CHOKE_NAMES, "key", 17)
     text(pg, (186, 578), "RETRIGGERING A VOICE", 15, INK_DIM)
     text(pg, (186, 598), "SILENCES ITS GROUP", 15, INK_DIM)
-    eq_art(pg, (368, 282, 896, 330))
     return pg
 
 
@@ -464,7 +331,7 @@ def glb_page():
     pg = Page("GLB")
     text(pg, (18, 27), "GLOBAL", 17, INK_DIM, "lm")
     panel(pg, (16, 58, 640, 212), "KEYBOARD")
-    knob(pg, "base_note", 96, 176, 62, "BASE NOTE", lcd_rect=(58, 215, 76, 26), label_w=140)
+    knob(pg, "base_note", 96, 176, 62, "BASE NOTE", lcd_rect=(54, 213, 84, 30), label_w=140)
     text(pg, (300, 116), "VOICE", 16, INK_DIM)
     momentary(pg, "voice_prev", (208, 150, 54, 46), "", arrow="left")
     readout(pg, "voice_name", (276, 150, 130, 46), 20)
@@ -486,13 +353,10 @@ PAGES = [osc_page, pitch_page, filter_page, fx_page, glb_page]
 
 # ---------------------------------------------------------------- Q-Links: each page's knobs, 8 per bank
 QLINK_BANKS = {
-    "OSC": [["voice", "vel_to_vol", "vel_to_cut", "vel_to_noise", "vel_to_osc", "vel_to_penv", "src_mix", "osc_decay"],
-            ["osc_shape", "osc_xmod"]],
-    "PITCH": [["pitch", "pitch_track", "penv_attack", "penv_decay", "penv_shape", "penv_amount", "noise_colour",
-               "noise_filter"],
-              ["noise_attack", "noise_decay", "noise_shape"]],
+    "OSC": [["src_mix", "osc_decay", "osc_shape", "osc_xmod"]],
+    "PITCH": [["pitch", "pitch_track", "penv_attack", "penv_decay", "penv_shape", "penv_amount"]],
     "FILTER": [["filter_mode", "filter_res", "filter_cutoff", "fenv_amount", "fenv_decay", "stutter_length",
-                "stutter_strength", "voice"]],
+                "stutter_strength"]],   # no "voice": the strip's selector is gone (pad hits select)
     "FX": [["dist_drive", "eq_freq", "eq_gain", "eq_q", "out_pan", "out_vol", "out_sel", "choke"]],
     "GLB": [["base_note"]],
 }
@@ -763,7 +627,7 @@ def build_page(pg, tab, sv, defs, cache):
             add_def(dkey, KEY_ACTIONS, [focus(w, h), button(on_n, off_n, 1, 1, w, h)])
             place(dkey, key, key, c["rect"])
         elif c["kind"] == "value":
-            px = c.get("px", 21)
+            px = c.get("px", 24)
             dkey = "sdValue_%d_%d_%d_%d" % (w, h, px, 1 if c.get("left") else 0)
             add_def(dkey, [], [value_label(w, h, px, left=c.get("left", False))], ignore=True)
             kids.append(placed(dkey, key + " value", INDEX[key], c["rect"], False))
@@ -855,7 +719,7 @@ def preview(out_dir):
                 img.alpha_composite(on if PBYKEY[key].get("default", 0) and PBYKEY[key].get("options") else off, (x, y))
             elif c["kind"] == "value":
                 s = default_text(key)
-                f = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", R(c.get("px", 21) * 0.72))
+                f = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", R(c.get("px", 24) * 0.72))
                 if c.get("left"):
                     d.text((x + 10, y + h / 2), s, font=f, fill="#" + LCD_INK, anchor="lm")
                 else:
