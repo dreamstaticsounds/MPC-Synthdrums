@@ -61,8 +61,9 @@ dist/MPC-Synthdrums-1.0.1-mpc-armv7.zip      # Gen1 (MPC Force, Live/One/X/Key 1
 dist/MPC-Synthdrums-1.0.1-mpc-aarch64.zip    # Gen2 (MPC Live/One/X/Key 3, MPC 500)
 ```
 
-The zips are **not cut yet** — `release.py` runs only when a release is asked for. Each is produced by
-(`python3 …/release.py --help` documents the flags; the armv7 run uses `build/arm/synthdrums.so`, the aarch64 run
+The zips were cut on 2026-10-22 (both verified: `unzip -t` clean, 357 files each; armv7 carries the ELF 32-bit
+EABI5 `.so` 62 932 B, aarch64 the ELF 64-bit `.so` 80 016 B; `version.xml` **1.0.1.0**). Re-cut on request with
+`release.py` (the armv7 run uses `build/arm/synthdrums.so`, the aarch64 run
 `build/arm64/synthdrums.so`, everything else identical):
 
 ```sh
