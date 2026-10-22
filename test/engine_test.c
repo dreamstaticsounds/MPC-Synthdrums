@@ -478,6 +478,47 @@ int main(void)
     sp(x, "eq3_freq", 127); E->get_param(x, "eq3_freq_display", b, sizeof b); CHECK(!strcmp(b, "12.0 kHz"), "eq3 display hi (%s)", b);
     sp(x, "pitch", 0);   /* restore: the choke click test's step limit assumes the 65 Hz base tone */
 
+    /* ---- Task 7: ring mod, operator FM, comb, gated reverb ---- */
+    /* every module is exact bypass at 0 (direct unit calls on fresh state) */
+    {
+        RingSt r; FmSt f; CombSt cb; GVerbSt gv;
+        float xc = 0.5f;
+        memset(&r, 0, sizeof r); memset(&f, 0, sizeof f); memset(&cb, 0, sizeof cb); memset(&gv, 0, sizeof gv);
+        CHECK(fx_ring(&r, xc, 8000.0f, 0.0f) == xc, "ring bypass at 0");
+        CHECK(fx_fm(&f, xc, 8.0f, 0.0f) == xc, "fm bypass at 0");
+        CHECK(fx_comb(&cb, xc, 30.0f, 0.75f, 0.0f) == xc, "comb bypass at 0");
+        CHECK(fx_gverb(&gv, xc, 0.0f, 0.0f) == xc, "gverb bypass at 0");
+    }
+    /* engaged: each knob changes the voice (cap: one block, 128 frames) */
+    sp(x, "src_mix", 0); sp(x, "osc_decay", 100);
+    note(x, 36, 127); cap(x, A, 128);
+    sp(x, "ring_mod", 127); note(x, 36, 127); cap(x, B, 128);
+    CHECK(capdiff(A, B, 128) > 1e-3, "ring engages");
+    sp(x, "ring_mod", 0); sp(x, "fm_index", 127); note(x, 36, 127); cap(x, B, 128);
+    CHECK(capdiff(A, B, 128) > 1e-3, "fm engages");
+    sp(x, "fm_index", 0); sp(x, "comb", 127); note(x, 36, 127); cap(x, B, 128);
+    CHECK(capdiff(A, B, 128) > 1e-3, "comb engages");
+    /* the gate closes the tail: full wet + a sustained input — the tail must die when the gate shuts
+     * (m = 1 removes the dry entirely, so what remains after the gate is nothing but the gated wet) */
+    sp(x, "comb", 0); sp(x, "osc_decay", 127); sp(x, "gverb", 127);
+    note(x, 36, 127); Stat gv_mid = run_from(x, 12, 10);   /* the combs' first reflections (29.7 ms) arrived */
+    CHECK(gv_mid.nan == 0 && gv_mid.peak < 32767 && gv_mid.rms > 0.01, "gverb wet audible (%.4f)", gv_mid.rms);
+    Stat gv_late = run_from(x, 120, 20);                   /* ~410 ms: the gate has shut */
+    CHECK(gv_late.rms < gv_mid.rms * 0.05, "gated reverb tail is gated (%.4f vs %.4f)", gv_late.rms, gv_mid.rms);
+    sp(x, "gverb", 0);
+    /* the displays */
+    sp(x, "ring_mod", 127); E->get_param(x, "ring_mod_display", b, sizeof b); CHECK(!strcmp(b, "8.0 kHz"), "ring display (%s)", b);
+    sp(x, "comb", 127); E->get_param(x, "comb_display", b, sizeof b); CHECK(!strcmp(b, "30.0 ms"), "comb display (%s)", b);
+    sp(x, "ring_mod", 0); sp(x, "comb", 0);
+    /* two hits bit-identical with all four engaged (comb at 32: ~1.4 ms, so the reflections land
+     * inside the captured block and the comparison sees real signal, not pre-reflection silence) */
+    sp(x, "ring_mod", 64); sp(x, "fm_index", 64); sp(x, "comb", 32); sp(x, "gverb", 64);
+    note(x, 36, 127); cap(x, A, 128);
+    note(x, 36, 127); cap(x, B, 128);
+    CHECK(capdiff(A, B, 128) < 1e-9, "FX states reset per hit (bit-identical)");
+    sp(x, "ring_mod", 0); sp(x, "fm_index", 0); sp(x, "comb", 0); sp(x, "gverb", 0);
+    sp(x, "src_mix", 0); sp(x, "osc_decay", 127);
+
     /* ---- the FX and the output (Task 5's block) ---- */
 /* prelude: one clean loud voice; everything Task 4 left dirty is restored/open */
 sp(x, "voice", 0); sp(x, "base_note", 36);

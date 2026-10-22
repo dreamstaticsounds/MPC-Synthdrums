@@ -58,6 +58,33 @@ float eq_step(PeakEQ *e, float x);
 #define EQ_MIN_HZ 40.0f
 #define EQ_MAX_HZ 12000.0f
 
+/* The FX row (spec §8): ring mod, operator FM, comb and gated reverb. Each function returns x EXACTLY
+ * when its depth/mix argument is 0, so a knob at zero is a true bypass (no rounding, no state change).
+ * All four states are per-hit: sd_voice_reset() clears them, so two hits with the same settings render
+ * bit-identical audio. */
+
+/* Ring mod: y = x*((1-g) + g*sin(2*pi*ph)), the carrier ph advancing at hz. g ramps to its target over
+ * 1 ms (a step in the ring depth would click). */
+typedef struct { float ph, g; } RingSt;
+float fx_ring(RingSt *r, float x, float hz, float g);
+
+/* Operator FM: y = x + g*sin(2*pi*ph_c + idx*x) — a 150 Hz operator on the voice itself. */
+typedef struct { float ph; } FmSt;
+float fx_fm(FmSt *f, float x, float idx, float g);
+
+/* Comb: a feedback delay line (fb 0.75), out = the read head, delay = the knob's ms. The buffer covers
+ * the longest delay (30 ms = 1323 samples) plus linear-interp margin; w is the write cursor. */
+#define COMB_BUF 1408
+typedef struct { float buf[COMB_BUF]; int w; } CombSt;
+float fx_comb(CombSt *cb, float x, float ms, float fb, float g);
+
+/* Gated reverb: a Schroeder bank (4 combs + 2 allpass) behind a per-hit gate — the gate is open for
+ * GATE_S from the hit, then fades out over 5 ms, so the tail stops dead (the classic gated look). The
+ * gate's age t_hit comes from the voice's own per-hit timer. */
+#define GVERB_GATE_S 0.2f
+typedef struct { float c[4][2048], a[2][224]; int ci[4], ai[2]; } GVerbSt;   /* combs < 2048; allpass: 5.0 ms = 221 < 224 */
+float fx_gverb(GVerbSt *gv, float x, float m, float t_hit);
+
 /* The choke fade: 5 ms, from full level to silence. */
 #define CHOKE_FADE_S 0.005f
 
@@ -89,6 +116,11 @@ typedef struct {
     float nfenv_t;          /* the noise filter env's age, in seconds */
     Stutter stut;           /* the stutter gate's phase */
     PeakEQ eq[3];           /* the three peaking EQ bands' coefficients and delay lines, in series */
+    RingSt ring;            /* the FX row's states, in chain order after the EQ */
+    FmSt fm;
+    CombSt comb;
+    GVerbSt gv;
+    float gverb_t;          /* the gated reverb's per-hit gate age, in seconds */
     float choke_gain;       /* the choke fade's multiplier: 1 = free, 0 = silenced */
     float choke_t;          /* the choke fade's age, in seconds */
     int choke_fading;       /* the choke fade is running: the voice is on its way to silence */

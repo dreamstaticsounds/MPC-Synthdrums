@@ -488,6 +488,40 @@
    "min": 0,
    "max": 127,
    "display": "int"
+  },
+  {
+   "key": "ring_mod",
+   "name": "RING MOD",
+   "default": 0,
+   "min": 0,
+   "max": 127,
+   "display": "int",
+   "dynamic_display": true
+  },
+  {
+   "key": "fm_index",
+   "name": "FM INDEX",
+   "default": 0,
+   "min": 0,
+   "max": 127,
+   "display": "int"
+  },
+  {
+   "key": "comb",
+   "name": "COMB",
+   "default": 0,
+   "min": 0,
+   "max": 127,
+   "display": "int",
+   "dynamic_display": true
+  },
+  {
+   "key": "gverb",
+   "name": "GATED VERB",
+   "default": 0,
+   "min": 0,
+   "max": 127,
+   "display": "int"
   }
  ]
 }

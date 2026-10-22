@@ -123,6 +123,12 @@ PARAMS = [
     P("eq3_freq", "EQ3 FREQ", 0, 127, 64, dynamic_display=True),
     P("eq3_gain", "EQ3 GAIN", -63, 63, 0),
     P("eq3_q", "EQ3 Q", 0, 127, 64),
+
+    # The FX row (spec §8): ring mod, operator FM, comb, gated reverb. Each is off (exact bypass) at 0.
+    P("ring_mod", "RING MOD", 0, 127, 0, dynamic_display=True),
+    P("fm_index", "FM INDEX", 0, 127, 0),
+    P("comb", "COMB", 0, 127, 0, dynamic_display=True),
+    P("gverb", "GATED VERB", 0, 127, 0),
 ]
 
 for p in PARAMS:   # momentary keys: a plain 0..1 with no int display

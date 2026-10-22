@@ -249,6 +249,14 @@ static int get_param(void *p, const char *k, char *buf, int n)
                     hz_str(40.0f * powf(300.0f, v * (1.0f / 127.0f)), t, sizeof t);
                     return put(buf, n, t);
                 }
+                if (j == P_RING_MOD) {
+                    hz_str(powf(8000.0f, v * (1.0f / 127.0f)), t, sizeof t);   /* the carrier, 1 Hz .. 8 kHz */
+                    return put(buf, n, t);
+                }
+                if (j == P_COMB) {
+                    snprintf(t, sizeof t, "%.1f ms", 0.5f * powf(60.0f, v * (1.0f / 127.0f)));
+                    return put(buf, n, t);
+                }
                 return 0;   /* unknown dynamic display: the wrapper's default numeric path */
             }
         }

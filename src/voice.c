@@ -13,10 +13,12 @@
  *  - the noise: a white LFSR -> the colour's tilt -> its own amp env -> its own biquad -> the osc/noise mix
  *  - the filters: each branch (osc, noise) has its own resonant 12 dB/oct biquad (LP/BP/HP) and its own
  *    one-shot envelope; the mix happens after both
- *  - the effects: the stutter gate -> the waveshaper -> the three peaking EQ bands -> the pan and the level
+ *  - the effects: the stutter gate -> the waveshaper -> the three peaking EQ bands -> ring mod, FM, comb,
+ *    gated reverb -> the pan and the level
  *  - the velocity routings: m = 1 - depth/127 + (depth/127)*vel on the amp, the two sources and the penv depth */
 #include <math.h>
 #include <stdint.h>
+#include <string.h>
 #include "synthdrums.h"
 
 /* The sample step: the engine runs at 44100 Hz (the wrapper's contract, SD_SR). */
@@ -153,6 +155,13 @@ void sd_voice_reset(Voice *v)
         v->eq[i].bx1 = 0.0f;
         v->eq[i].by1 = 0.0f;
     }
+    /* the FX row's states: per-hit, so two hits with the same settings are bit-identical */
+    v->ring.ph = 0.0f;
+    v->ring.g = 0.0f;
+    v->fm.ph = 0.0f;
+    memset(&v->comb, 0, sizeof v->comb);
+    memset(&v->gv, 0, sizeof v->gv);
+    v->gverb_t = 0.0f;
     /* the choke fade: a fresh hit is free (the fade only starts when another voice chokes this one) */
     v->choke_gain = 1.0f;
     v->choke_t = 0.0f;
@@ -250,6 +259,15 @@ void sd_voice_render(Voice *v, float *bus, int frames)
     const float eq_q[3] = { 0.5f * powf(12.0f, VP(v, P_EQ_Q) * (1.0f / 127.0f)),
                             0.5f * powf(12.0f, VP(v, P_EQ2_Q) * (1.0f / 127.0f)),
                             0.5f * powf(12.0f, VP(v, P_EQ3_Q) * (1.0f / 127.0f)) };
+    /* The FX row's knobs (all off at 0): the ring carrier (1 Hz..8 kHz log), the FM index (0..8 rad,
+     * its gate the same knob), the comb's delay (0.5..30 ms) and the gated reverb's mix. */
+    const float ring01 = VP(v, P_RING_MOD) * (1.0f / 127.0f);
+    const float ring_hz = powf(8000.0f, ring01);          /* 1 Hz at 0 .. 8 kHz at 127 */
+    const float fm_g = VP(v, P_FM_INDEX) * (1.0f / 127.0f);
+    const float fm_idx = 8.0f * fm_g;
+    const float comb01 = VP(v, P_COMB) * (1.0f / 127.0f);
+    const float comb_ms = 0.5f * powf(60.0f, comb01);      /* 0.5 ms at 0 .. 30 ms at 127 */
+    const float gverb_m = VP(v, P_GVERB) * (1.0f / 127.0f);
     /* The output stage: the pan (equal power: -64 = hard left, 0 = centre, +63 = hard right) and the
      * level (0 .. ~1.4x, the init patch's 100 is a little over unity). The "out_sel" knob is state-only:
      * the MPC sums its three output buses to the main pair, so all three selections sound the same. */
@@ -343,6 +361,14 @@ void sd_voice_render(Voice *v, float *bus, int frames)
         out = eq_step(&v->eq[0], out);
         out = eq_step(&v->eq[1], out);
         out = eq_step(&v->eq[2], out);
+
+        /* The FX row: ring mod, operator FM, comb, gated reverb — each exact bypass at 0. The reverb's
+         * gate is per-hit: its age advances here and starts at 0 with every trigger. */
+        out = fx_ring(&v->ring, out, ring_hz, ring01);
+        out = fx_fm(&v->fm, out, fm_idx, fm_g);
+        out = fx_comb(&v->comb, out, comb_ms, 0.75f, comb01);
+        v->gverb_t += DT;
+        out = fx_gverb(&v->gv, out, gverb_m, v->gverb_t);
 
         /* The choke fade: it lives in the voice's own output path (never in the master bus, which would
          * fade the choking voice's own hit as well). The fade is a raised cosine over 5 ms, so it starts
