@@ -13,9 +13,16 @@
  * The delay line is Direct Form I (four states, five multiplies a sample). The filter env's value lives
  * in f->env (the cutoff's offset in Hz): the voice decays it and asks for a new coefficient set as the
  * cutoff sweeps.
- */
+ *
+ * A swept resonator is not unconditionally stable: while an env moves the cutoff, coefficient changes can
+ * inject energy no frozen coefficient set ever would. The voice therefore updates the coefficients at block
+ * rate (LTI between updates), which keeps sweeps well-behaved; the state clamp here is only a safety net
+ * (~36 dB over full scale): a normal voice never reaches it, and a pathological setting rings at a bounded
+ * level instead of overflowing to inf (which the master bus would have to silence). */
 #include <math.h>
 #include "synthdrums.h"
+
+#define FILTER_STATE_MAX 64.0f
 
 void filt_set(Filt *f, float cutoff_hz, float q, int mode)
 {
@@ -59,7 +66,9 @@ void filt_set(Filt *f, float cutoff_hz, float q, int mode)
 
 float filt_step(Filt *f, float x)
 {
-    const float y = f->b0 * x + f->b1 * f->x1 + f->b2 * f->x2 - f->a1 * f->y1 - f->a2 * f->y2;
+    float y = f->b0 * x + f->b1 * f->x1 + f->b2 * f->x2 - f->a1 * f->y1 - f->a2 * f->y2;
+    if (y > FILTER_STATE_MAX) y = FILTER_STATE_MAX;          /* the swept-resonator runaway guard */
+    else if (y < -FILTER_STATE_MAX) y = -FILTER_STATE_MAX;
     f->x2 = f->x1;
     f->x1 = x;
     f->y2 = f->y1;

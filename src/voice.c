@@ -10,8 +10,9 @@
  *  - the pitch env: the depth is penv_amount*(48/63) semitones, penv_attack ramps it 0->full, penv_decay
  *    brings it back to 0 exponentially, penv_shape blends the curve from exponential to linear
  *  - pitch_track: the played octave above the voice's own key, scaled by track/127, in semitones
- *  - the noise: a white LFSR -> the colour's tilt -> its own amp env -> its own low-pass -> the osc/noise mix
- *  - the filter: the mix -> a resonant 12 dB/oct biquad (LP/BP/HP) -> the level
+ *  - the noise: a white LFSR -> the colour's tilt -> its own amp env -> its own biquad -> the osc/noise mix
+ *  - the filters: each branch (osc, noise) has its own resonant 12 dB/oct biquad (LP/BP/HP) and its own
+ *    one-shot envelope; the mix happens after both
  *  - the effects: the stutter gate -> the waveshaper -> the peaking EQ -> the pan and the level
  *  - the velocity routings: m = 1 - depth/127 + (depth/127)*vel on the amp, the two sources and the penv depth */
 #include <math.h>
@@ -110,9 +111,8 @@ void sd_voice_reset(Voice *v)
     v->t_penv = 0.0f;
     v->t_nenv = 0.0f;
     v->brown = 0.0f;
-    v->nfilt = 0.0f;
     v->lfsr = LFSR_SEED;
-    /* the filter: the coefficients, the delay line and the filter env's offset are per-hit state too, so
+    /* the filters: the coefficients, the delay lines and both filter envs' offsets are per-hit state too, so
      * two hits with the same settings are bit-identical */
     v->filt.b0 = 0.0f;
     v->filt.b1 = 0.0f;
@@ -125,6 +125,17 @@ void sd_voice_reset(Voice *v)
     v->filt.y2 = 0.0f;
     v->filt.env = 0.0f;
     v->fenv_t = 0.0f;
+    v->nfil.b0 = 0.0f;
+    v->nfil.b1 = 0.0f;
+    v->nfil.b2 = 0.0f;
+    v->nfil.a1 = 0.0f;
+    v->nfil.a2 = 0.0f;
+    v->nfil.x1 = 0.0f;
+    v->nfil.x2 = 0.0f;
+    v->nfil.y1 = 0.0f;
+    v->nfil.y2 = 0.0f;
+    v->nfil.env = 0.0f;
+    v->nfenv_t = 0.0f;
     /* the stutter's gate phase: per-hit state, so a retrigger starts the gate from the same place */
     v->stut.phase = 0.0f;
     /* the EQ's delay line: per-hit state too (the coefficients are recomputed every block) */
@@ -163,7 +174,6 @@ void sd_voice_render(Voice *v, float *bus, int frames)
     const float fm = (VP(v, P_OSC_XMOD) * (1.0f / 127.0f)) * 3.0f;   /* the x-mod's FM index, in radians */
     const float penv_amt = VP(v, P_PENV_AMOUNT) * (48.0f / 63.0f);   /* the pitch env's depth, in semitones */
     const float a_col = 0.02f + 0.98f * (VP(v, P_NOISE_COLOUR) * (1.0f / 127.0f));   /* the colour's tilt */
-    const float a_nf = 1.0f - expf(-TWO_PI * (100.0f * powf(1000.0f, VP(v, P_NOISE_FILTER) * (1.0f / 127.0f))) / SD_SR);
     const float tau_amp = knob_time(VP(v, P_OSC_DECAY), 0.002f, 4.0f);
     const float coef_amp = expf(-1.0f / (SD_SR * tau_amp));       /* the osc amp env's coefficient */
     const float tau_n = knob_time(VP(v, P_NOISE_DECAY), 0.002f, 4.0f);
@@ -192,6 +202,18 @@ void sd_voice_render(Voice *v, float *bus, int frames)
     const float tau_f = knob_time(VP(v, P_FENV_DECAY), 0.002f, 2.0f);
     const float cut_base = cut_knob + vel_cut;
     float fenv0 = 0.0f;   /* the env's start offset, in Hz */
+    /* The noise branch's filter: the same RBJ biquad on its own cutoff knob (20 Hz .. 18 kHz, a wider log
+     * sweep than the osc filter's), its own Q/mode and its own envelope + velocity routing (the velocity
+     * offset follows the same law as vel_to_cut). */
+    const float ncut_knob = 20.0f * powf(900.0f, VP(v, P_NOISE_FILTER) * (1.0f / 127.0f));
+    const float nq = 0.7f + 8.3f * (VP(v, P_NFILT_RES) * (1.0f / 127.0f));
+    const int nmode = (int)(VP(v, P_NFILT_MODE) + 0.5f);
+    const float nvel_cut = VP(v, P_NFILT_VEL) * (1.0f / 127.0f) * (v->vel - 0.5f) * 3000.0f;
+    const int nfenv_on = (VP(v, P_NFILT_ENV_AMOUNT) != 0.0f);
+    const float nfenv_amt = VP(v, P_NFILT_ENV_AMOUNT) * (4000.0f / 63.0f);
+    const float ntau_f = knob_time(VP(v, P_NFILT_ENV_DECAY), 0.002f, 2.0f);
+    const float ncut_base = ncut_knob + nvel_cut;
+    float nfenv0 = 0.0f;
     int i;
 
     /* The stutter: the gate's rate (0.5 .. 40 Hz, an exponential sweep -- the roll/echo-machine feel)
@@ -216,11 +238,23 @@ void sd_voice_render(Voice *v, float *bus, int frames)
 
     /* The env's start is clamped to the filter's range, so the sweep always starts inside it and decays
      * back to the cutoff the knob (and the velocity) asked for. */
-    if (fenv_on) fenv0 = clampf(cut_base + fenv_amt, FILT_MIN_HZ, FILT_MAX_HZ) - cut_base;
-    else v->filt.env = 0.0f;
-
-    /* The filter's coefficients: once a block, or every sample while the env sweeps the cutoff. */
-    filt_set(&v->filt, clampf(cut_base + fenv0, FILT_MIN_HZ, FILT_MAX_HZ), q, mode);
+    /* The filters' coefficients: once a block, at the env's current value. A Direct Form I biquad's
+     * coefficients must NOT be re-computed per sample: per-sample modulation parametrically pumps a loud
+     * coherent input (the swept cutoff crosses the tone and injects energy no frozen coefficient set
+     * would), ringing the voice up to the state clamp long after the env has settled. At block rate the
+     * filter is LTI between updates, each update step is ~3 ms (the shortest env tau is ~2 ms, so the
+     * fastest sweeps get a couple of steps), and the per-sample expf() calls disappear (two per sample
+     * before: a real CPU saving on the MPC). */
+    if (fenv_on) {
+        fenv0 = clampf(cut_base + fenv_amt, FILT_MIN_HZ, FILT_MAX_HZ) - cut_base;
+        v->filt.env = fenv0 * expf(-v->fenv_t / tau_f);
+    } else v->filt.env = 0.0f;
+    if (nfenv_on) {
+        nfenv0 = clampf(ncut_base + nfenv_amt, FILT_MIN_HZ, FILT_MAX_HZ) - ncut_base;
+        v->nfil.env = nfenv0 * expf(-v->nfenv_t / ntau_f);
+    } else v->nfil.env = 0.0f;
+    filt_set(&v->filt, clampf(cut_base + v->filt.env, FILT_MIN_HZ, FILT_MAX_HZ), q, mode);
+    filt_set(&v->nfil, clampf(ncut_base + v->nfil.env, FILT_MIN_HZ, FILT_MAX_HZ), nq, nmode);
 
     /* The EQ's coefficients: once a block (the EQ has no envelope). */
     eq_set(&v->eq, eq_hz, eq_db, eq_q);
@@ -253,26 +287,23 @@ void sd_voice_render(Voice *v, float *bus, int frames)
         /* The osc amp env: exponential, one-shot. */
         v->amp *= coef_amp;
 
-        /* The noise: the colour's leaky integrator, then the amp envelope, then the noise tone filter. */
+        /* The noise: the colour's leaky integrator, then the amp envelope, then its own filter. */
         v->brown += a_col * (w - v->brown);
         v->t_nenv += DT;
         v->nenv = env_level(v->t_nenv, ta_n, tau_n, g_n);
-        v->nfilt += a_nf * (v->brown * v->nenv - v->nfilt);
+        noise = filt_step(&v->nfil, v->brown * v->nenv);
 
-        /* The osc/noise mix. */
-        noise = v->nfilt;
-        out = osc * v->amp * osc_gain + noise * noise_gain;
+        /* The noise filter env's clock (the coefficients follow at the block rate). */
+        if (nfenv_on) v->nfenv_t += DT;
 
-        /* The filter env: the offset decays to zero, so the cutoff sweeps back to the knob's. */
-        if (fenv_on) {
-            v->fenv_t += DT;
-            v->filt.env = fenv0 * expf(-v->fenv_t / tau_f);
-            filt_set(&v->filt, clampf(cut_base + v->filt.env, FILT_MIN_HZ, FILT_MAX_HZ), q, mode);
-        }
+        /* The osc branch's filter: it colours the oscillator only, the velocity's level rides on top. */
+        osc = filt_step(&v->filt, osc) * v->amp;
 
-        /* The filter sits between the mix and the level: it colours the whole voice, the velocity's level
-         * rides on top of it. */
-        out = filt_step(&v->filt, out);
+        /* The filter env's clock: the offset decays to zero, so the cutoff sweeps back to the knob's. */
+        if (fenv_on) v->fenv_t += DT;
+
+        /* The mix: both branches are filtered before they meet. */
+        out = osc * osc_gain + noise * noise_gain;
         out *= v->vel_vol;
 
         /* The stutter gate: it chops the voice's amplitude (the roll/echo-machine effect). */

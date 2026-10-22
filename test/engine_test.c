@@ -362,9 +362,9 @@ int main(void)
     sp(x, "osc_decay", 64); note(x, 36, 110); run(x, 5); note(x, 36, 0);
     Stat off = run(x, 30); CHECK(off.rms > 1e-3, "note-off ignored, one-shot keeps sounding");
 
-    /* ---- the filter (Task 4's block) ---- */
+    /* ---- the filter (Task 4's block): the osc branch's own filter (the noise branch has its own below) ---- */
     sp(x, "voice", 0);   /* keep MIDI note(36) and trig on the same voice for this section */
-    sp(x, "src_mix", 127); sp(x, "noise_decay", 127);   /* bright sustained noise */
+    sp(x, "src_mix", 0); sp(x, "osc_decay", 127); sp(x, "pitch", 24);   /* a sustained mid sine for the LP to bite */
     sp(x, "filter_cutoff", 20); sp(x, "filter_res", 0); sp(x, "trig", 1); Stat lp_dark = run(x, 80);
     sp(x, "filter_cutoff", 127); sp(x, "trig", 1); Stat lp_open = run(x, 80);
     CHECK(lp_open.rms > lp_dark.rms * 2, "LP cutoff attenuates (%.4f vs %.4f)", lp_dark.rms, lp_open.rms);
@@ -376,16 +376,50 @@ int main(void)
     sp(x, "filter_mode", 2); sp(x, "trig", 1); Stat hp = run(x, 60);
     sp(x, "filter_mode", 0); sp(x, "trig", 1); Stat lp = run(x, 60);
     CHECK(fabsf(bp.rms - lp.rms) > 1e-4 && fabsf(hp.rms - lp.rms) > 1e-4 && hp.nan == 0, "modes differ");
-    /* filter env: open transient then settle (decay 90 ≈ ~300 ms so fe catches the sweep) */
-    sp(x, "filter_res", 40); sp(x, "filter_cutoff", 30);
-    sp(x, "fenv_amount", 63); sp(x, "fenv_decay", 90); sp(x, "trig", 1);
+    /* filter env: open transient then settle. res 0 (the resonance would ring the 261 Hz test tone),
+     * decay 64 (~70 ms tau) so the env is fully settled well inside the late window */
+    sp(x, "filter_res", 0); sp(x, "filter_cutoff", 30);
+    sp(x, "fenv_amount", 63); sp(x, "fenv_decay", 64); sp(x, "trig", 1);
     Stat fe = run(x, 10); Stat fs = run_from(x, 300, 100);
     CHECK(fe.rms > fs.rms * 1.3, "filter env opens then settles (%.4f vs %.4f)", fe.rms, fs.rms);
     /* vel→cut: both hits via MIDI so they land on the same voice; vol flattened to isolate cut */
-    sp(x, "fenv_amount", 0); sp(x, "vel_to_cut", 127); sp(x, "vel_to_vol", 0);
+    sp(x, "fenv_amount", 0); sp(x, "vel_to_cut", 127); sp(x, "vel_to_vol", 0); sp(x, "filter_cutoff", 64);
     note(x, 36, 127); Stat vc_loud = run(x, 40); note(x, 36, 5); Stat vc_quiet = run(x, 40);
     CHECK(vc_loud.rms > vc_quiet.rms * 1.05, "vel_to_cut brightens with velocity (%.4f vs %.4f)", vc_loud.rms, vc_quiet.rms);
-    sp(x, "vel_to_cut", 0); sp(x, "vel_to_vol", 127);   /* restore for Task 5 */
+    sp(x, "vel_to_cut", 0); sp(x, "vel_to_vol", 127); sp(x, "pitch", 0);   /* restore for Task 5 */
+
+    /* ---- Task 4: the noise branch's own filter + dynamic Hz displays ---- */
+    sp(x, "voice", 0); sp(x, "base_note", 36);
+    sp(x, "src_mix", 127);                 /* noise only */
+    sp(x, "noise_colour", 127); sp(x, "noise_attack", 0); sp(x, "noise_decay", 100);
+    sp(x, "filter_res", 0); sp(x, "filter_mode", 0); sp(x, "fenv_amount", 0);
+    sp(x, "nfilt_res", 0); sp(x, "nfilt_mode", 0);
+    sp(x, "nfilt_env_amount", 0); sp(x, "nfilt_vel", 0); sp(x, "filter_cutoff", 0);
+    sp(x, "noise_filter", 127); note(x, 36, 127);
+    int zc_open = zc(x, 40);
+    sp(x, "noise_filter", 0); note(x, 36, 127);
+    int zc_dark = zc(x, 40);
+    CHECK(zc_dark < zc_open / 2, "noise cutoff darkens the noise (%d vs %d)", zc_dark, zc_open);
+    /* the osc filter (closed!) does not touch the noise branch */
+    sp(x, "noise_filter", 127); note(x, 36, 127);
+    int zc_oscclosed = zc(x, 40);
+    CHECK(zc_oscclosed > zc_open * 3 / 4, "closed osc filter leaves noise bright (%d vs %d)", zc_oscclosed, zc_open);
+    /* the noise filter env opens the cutoff on the hit then settles */
+    sp(x, "filter_cutoff", 127); sp(x, "noise_filter", 0);
+    sp(x, "nfilt_env_amount", 63); sp(x, "nfilt_env_decay", 64);
+    note(x, 36, 127);
+    int nfe = zc_after(x, 0, 6), nfl = zc_after(x, 60, 20);
+    CHECK(nfe > nfl * 3 / 2, "noise filter env sweeps then settles (%d vs %d)", nfe, nfl);
+    sp(x, "src_mix", 0); sp(x, "nfilt_env_amount", 0); sp(x, "filter_cutoff", 127);
+    sp(x, "noise_filter", 127);
+    /* dynamic Hz displays */
+    sp(x, "filter_cutoff", 127);
+    E->get_param(x, "filter_cutoff_display", b, sizeof b); CHECK(!strcmp(b, "16.0 kHz"), "cutoff display (%s)", b);
+    sp(x, "filter_cutoff", 0);
+    E->get_param(x, "filter_cutoff_display", b, sizeof b); CHECK(!strcmp(b, "30 Hz"), "cutoff display low (%s)", b);
+    sp(x, "noise_filter", 127);
+    E->get_param(x, "noise_filter_display", b, sizeof b); CHECK(!strcmp(b, "18.0 kHz"), "noise cutoff display (%s)", b);
+    sp(x, "filter_cutoff", 127);
 
     /* ---- the FX and the output (Task 5's block) ---- */
 /* prelude: one clean loud voice; everything Task 4 left dirty is restored/open */

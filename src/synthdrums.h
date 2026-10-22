@@ -19,7 +19,7 @@
 /* src/filter.c: the voice's biquad filter (RBJ's cookbook: 12 dB/oct, low pass / band pass / high pass with
  * a resonant peak). The coefficients are normalized (a0 = 1), the delay line is Direct Form I and the env
  * field holds the filter envelope's current cutoff offset, in Hz (the voice decays it and asks for a new
- * coefficient set as it sweeps). */
+ * coefficient set once a block as it sweeps). */
 typedef struct {
     float b0, b1, b2, a1, a2;   /* the normalized coefficients */
     float x1, x2, y1, y2;       /* the delay line */
@@ -81,10 +81,11 @@ typedef struct {
     float t_penv;           /* the envelopes' ages, in seconds */
     float t_nenv;
     float brown;            /* the noise colour's leaky integrator */
-    float nfilt;            /* the noise tone filter's state */
     uint32_t lfsr;          /* the noise LFSR (re-seeded at every trigger) */
-    Filt filt;              /* the voice's filter: the coefficients, the delay line and the filter env */
-    float fenv_t;           /* the filter env's age, in seconds */
+    Filt filt;              /* the oscillator branch's filter: coefficients, delay line, filter env */
+    float fenv_t;           /* the osc filter env's age, in seconds */
+    Filt nfil;              /* the noise branch's filter (same biquad, its own envelope) */
+    float nfenv_t;          /* the noise filter env's age, in seconds */
     Stutter stut;           /* the stutter gate's phase */
     PeakEQ eq;              /* the peaking EQ's coefficients and delay line */
     float choke_gain;       /* the choke fade's multiplier: 1 = free, 0 = silenced */
@@ -102,8 +103,8 @@ typedef struct {
     int have_clip;          /* the clipboard holds a voice */
 } Synth;
 
-extern const float INIT_PATCH[EDIT_PARAMS];   /* PDEF's defaults in P_ order */
-void patch_init_voice(Voice *v);
+void patch_init_voice(Voice *v);   /* INIT_PATCH (generated, p[] order) fills the voice */
+void hz_str(float hz, char *buf, int n);   /* "940 Hz" / "12.5 kHz": the dynamic frequency readouts */
 void patch_init_kit(Synth *s);
 
 /* src/voice.c: one voice's DSP -- the oscillator, the noise, the pitch and amp envelopes, the x-mod and the

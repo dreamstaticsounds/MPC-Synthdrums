@@ -73,14 +73,14 @@ PARAMS = [
     P("noise_attack", "NOISE ATTACK", 0, 127, 0),
     P("noise_decay", "NOISE DECAY", 0, 127, 64),
     P("noise_shape", "NOISE SHAPE", 0, 127, 64),
-    P("noise_filter", "NOISE FILTER", 0, 127, 127),
+    P("noise_filter", "NOISE CUTOFF", 0, 127, 127, dynamic_display=True),
     # STUTTER
     P("stutter_length", "STUTTER LEN", 0, 127, 64),
     P("stutter_strength", "STUTTER STR", 0, 127, 0),
     # FILTER
     P("filter_mode", "FILTER MODE", d=0, opts=FILTER_MODES),
     P("filter_res", "RES", 0, 127, 0),
-    P("filter_cutoff", "CUTOFF", 0, 127, 127),
+    P("filter_cutoff", "CUTOFF", 0, 127, 127, dynamic_display=True),
     P("fenv_amount", "F.ENV AMOUNT", -63, 63, 0),
     P("fenv_decay", "F.ENV DECAY", 0, 127, 64),
     # DIST
@@ -108,6 +108,12 @@ PARAMS = [
     P("voice_copy", "COPY VOICE", kind="PK_TRIG", momentary=True),
     P("voice_paste", "PASTE VOICE", kind="PK_TRIG", momentary=True),
     P("voice_init", "INIT VOICE", kind="PK_TRIG", momentary=True),
+    # the noise branch's filter (Task 4): a proper biquad with its own envelope, appended (append-only rule)
+    P("nfilt_res", "N.FILTER RES", 0, 127, 0),
+    P("nfilt_mode", "N.FILTER MODE", d=0, opts=FILTER_MODES),
+    P("nfilt_env_amount", "N.FENV AMOUNT", -63, 63, 0),
+    P("nfilt_env_decay", "N.FENV DECAY", 0, 127, 64),
+    P("nfilt_vel", "N.FILTER VEL", 0, 127, 0),
 ]
 
 for p in PARAMS:   # momentary keys: a plain 0..1 with no int display
@@ -122,6 +128,7 @@ assert _edit[:35] == list(range(35)), "the 1.0.0 edit block must keep VST indice
 assert (PARAMS[_edit[0]]["key"], PARAMS[_edit[34]]["key"]) == ("pitch", "choke"), "P_PITCH .. P_CHOKE"
 EDIT_KEYS = [PARAMS[i]["key"] for i in _edit]          # p[] order (append-only from here on)
 EDIT_PARAMS = len(_edit)
+_edit_def = {PARAMS[i]["key"]: PARAMS[i]["default"] for i in _edit}
 
 
 def params_json():
@@ -157,8 +164,11 @@ def header():
     for i in _edit:
         L.append("    %d," % i)
     L += ["};", "",
-          "_Static_assert(%d == 0 && %d == EDIT_PARAMS - 1, \"P_PITCH..P_CHOKE must map to p[] 0..EDIT_PARAMS-1\");"
+          "_Static_assert(%d == 0 && %d == 34, \"P_PITCH..P_CHOKE must keep VST indices 0..34\");"
           % (_edit[0], _edit[34]), "",
+          "/* the init patch: PDEF's defaults in p[] edit order (patch_init_voice copies it) */",
+          "static const float INIT_PATCH[EDIT_PARAMS] = {%s};" % ", ".join("%g" % _edit_def[k] for k in EDIT_KEYS),
+          "",
           "static const ParamDef PDEF[P_COUNT] = {"]
     for p in PARAMS:
         L.append('    {"%s", %s, %d, %d, %g, %d},' % (p["key"], p["kind"], p["min"], p["max"], p["default"],

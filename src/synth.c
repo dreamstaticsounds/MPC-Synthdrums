@@ -74,6 +74,14 @@ static int key_index(const char *k)
     return -1;
 }
 
+/* A frequency as a readout: "940 Hz" below 1 kHz, "12.5 kHz" at and above it (the wrapper's dynamic
+ * display strings -- get_param("<key>_display")). */
+void hz_str(float hz, char *buf, int n)
+{
+    if (hz < 1000.0f) snprintf(buf, (size_t)n, "%d Hz", (int)(hz + 0.5f));
+    else snprintf(buf, (size_t)n, "%.1f kHz", hz * 0.001f);
+}
+
 /* ---------------------------------------------------------------- the state: "MSDR 1" + sel/base + twelve voice lines */
 #define STATE_CAP 8192   /* the whole state is under 2.5 KB; the wrapper's chunk buffer holds 8 KB */
 
@@ -216,6 +224,30 @@ static int get_param(void *p, const char *k, char *buf, int n)
     if (!strcmp(k, "display_rev")) {
         snprintf(t, sizeof t, "%u", s->rev);
         return put(buf, n, t);
+    }
+    /* "<key>_display": the engine composes a value string (dynamic_display params; see tools/gen_params.py) */
+    {
+        const int dlen = (int)strlen(k);
+        if (dlen > 8 && !strcmp(k + dlen - 8, "_display")) {
+            char base[64];
+            int j, n2 = dlen - 8;
+            if (n2 >= (int)sizeof base) return 0;
+            memcpy(base, k, (size_t)n2); base[n2] = 0;
+            j = key_index(base);
+            if (j < 0 || PDEF[j].kind != PK_PATCH) return 0;
+            {
+                const float v = s->v[s->sel].p[P2E[j]];
+                if (j == P_FILTER_CUTOFF) {
+                    hz_str(30.0f * powf(16000.0f / 30.0f, v * (1.0f / 127.0f)), t, sizeof t);
+                    return put(buf, n, t);
+                }
+                if (j == P_NOISE_FILTER) {
+                    hz_str(20.0f * powf(900.0f, v * (1.0f / 127.0f)), t, sizeof t);
+                    return put(buf, n, t);
+                }
+                return 0;   /* unknown dynamic display: the wrapper's default numeric path */
+            }
+        }
     }
     i = key_index(k);
     if (i < 0) return 0;

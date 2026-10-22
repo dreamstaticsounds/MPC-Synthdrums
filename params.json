@@ -155,11 +155,12 @@
   },
   {
    "key": "noise_filter",
-   "name": "NOISE FILTER",
+   "name": "NOISE CUTOFF",
    "default": 127,
    "min": 0,
    "max": 127,
-   "display": "int"
+   "display": "int",
+   "dynamic_display": true
   },
   {
    "key": "stutter_length",
@@ -203,7 +204,8 @@
    "default": 127,
    "min": 0,
    "max": 127,
-   "display": "int"
+   "display": "int",
+   "dynamic_display": true
   },
   {
    "key": "fenv_amount",
@@ -391,6 +393,50 @@
    "min": 0,
    "max": 1,
    "momentary": true
+  },
+  {
+   "key": "nfilt_res",
+   "name": "N.FILTER RES",
+   "default": 0,
+   "min": 0,
+   "max": 127,
+   "display": "int"
+  },
+  {
+   "key": "nfilt_mode",
+   "name": "N.FILTER MODE",
+   "default": 0,
+   "options": [
+    "LP",
+    "BP",
+    "HP"
+   ],
+   "min": 0,
+   "max": 2
+  },
+  {
+   "key": "nfilt_env_amount",
+   "name": "N.FENV AMOUNT",
+   "default": 0,
+   "min": -63,
+   "max": 63,
+   "display": "int"
+  },
+  {
+   "key": "nfilt_env_decay",
+   "name": "N.FENV DECAY",
+   "default": 64,
+   "min": 0,
+   "max": 127,
+   "display": "int"
+  },
+  {
+   "key": "nfilt_vel",
+   "name": "N.FILTER VEL",
+   "default": 0,
+   "min": 0,
+   "max": 127,
+   "display": "int"
   }
  ]
 }

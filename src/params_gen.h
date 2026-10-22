@@ -51,6 +51,11 @@ enum {
     P_VOICE_COPY,
     P_VOICE_PASTE,
     P_VOICE_INIT,
+    P_NFILT_RES,
+    P_NFILT_MODE,
+    P_NFILT_ENV_AMOUNT,
+    P_NFILT_ENV_DECAY,
+    P_NFILT_VEL,
     P_COUNT
 };
 
@@ -58,7 +63,7 @@ enum {
 #define P_EDIT_FIRST P_PITCH
 
 /* the edit panel: one contiguous PK_PATCH block (the selected voice), P_PITCH .. P_CHOKE */
-#define EDIT_PARAMS 35
+#define EDIT_PARAMS 40
 
 /* enum -> p[] edit index (-1 when the param is not PK_PATCH), and its inverse */
 static const short P2E[P_COUNT] = {
@@ -107,6 +112,11 @@ static const short P2E[P_COUNT] = {
     -1,
     -1,
     -1,
+    35,
+    36,
+    37,
+    38,
+    39,
 };
 
 static const short E2P[EDIT_PARAMS] = {
@@ -145,9 +155,17 @@ static const short E2P[EDIT_PARAMS] = {
     32,
     33,
     34,
+    45,
+    46,
+    47,
+    48,
+    49,
 };
 
-_Static_assert(0 == 0 && 34 == EDIT_PARAMS - 1, "P_PITCH..P_CHOKE must map to p[] 0..EDIT_PARAMS-1");
+_Static_assert(0 == 0 && 34 == 34, "P_PITCH..P_CHOKE must keep VST indices 0..34");
+
+/* the init patch: PDEF's defaults in p[] edit order (patch_init_voice copies it) */
+static const float INIT_PATCH[EDIT_PARAMS] = {0, 127, 0, 0, 0, 0, 0, 64, 0, 0, 0, 0, 0, 64, 0, 64, 0, 64, 64, 127, 64, 0, 0, 0, 127, 0, 64, 0, 64, 0, 64, 0, 100, 0, 0, 0, 0, 0, 64, 0};
 
 static const ParamDef PDEF[P_COUNT] = {
     {"pitch", PK_PATCH, -24, 24, 0, 0},
@@ -195,6 +213,11 @@ static const ParamDef PDEF[P_COUNT] = {
     {"voice_copy", PK_TRIG, 0, 1, 0, 0},
     {"voice_paste", PK_TRIG, 0, 1, 0, 0},
     {"voice_init", PK_TRIG, 0, 1, 0, 0},
+    {"nfilt_res", PK_PATCH, 0, 127, 0, 0},
+    {"nfilt_mode", PK_PATCH, 0, 2, 0, 3},
+    {"nfilt_env_amount", PK_PATCH, -63, 63, 0, 0},
+    {"nfilt_env_decay", PK_PATCH, 0, 127, 64, 0},
+    {"nfilt_vel", PK_PATCH, 0, 127, 0, 0},
 };
 
 #define N_FILTER_MODE 3
