@@ -59,6 +59,7 @@ static void midi(void *p, const uint8_t *m, int len)
     if (len < 3) return;
     if ((m[0] & 0xF0) == 0x90 && m[2]) {
         const int idx = ((m[1] - s->base_note) % 12 + 12) % 12;
+        if (idx != s->sel) { s->sel = idx; s->rev++; }   /* a pad hit selects its voice for editing */
         Voice *v = &s->v[idx];
         v->note = m[1];                       /* the played note: pitch_track's reference */
         sd_voice_note(v, (float)m[2] / 127.0f);

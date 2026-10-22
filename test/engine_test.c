@@ -262,6 +262,19 @@ int main(void)
         E->get_param(x, "choke", b, sizeof b);     CHECK(!strcmp(b, "4"), "old chunk: last old param (choke)");
         E->set_param(x, "state", a);               /* put the captured state back for the tests below */
     }
+    /* Task 2: a pad hit selects that voice (base_note = 36: note 41 -> voice 5) */
+    {
+        sp(x, "base_note", 36);
+        E->get_param(x, "display_rev", a, sizeof a);
+        note(x, 41, 100);
+        E->get_param(x, "voice", b, sizeof b);   CHECK(!strcmp(b, "5"), "pad hit selects voice 5 (%s)", b);
+        E->get_param(x, "display_rev", c, sizeof c); CHECK(strcmp(a, c), "selection change bumps display_rev");
+        note(x, 41, 100);
+        E->get_param(x, "display_rev", a, sizeof a); note(x, 41, 100);
+        E->get_param(x, "display_rev", c, sizeof c); CHECK(!strcmp(a, c), "same-voice hit does not bump display_rev");
+        CHECK(run(x, 2).rms > 1e-4, "the folded hit sounds");
+        E->set_param(x, "voice", "0");           /* selection back for the tests below */
+    }
     /* display_rev bumps on voice switch, not on plain edits */
     E->get_param(x, "display_rev", a, sizeof a); sp(x, "voice", 5);
     E->get_param(x, "display_rev", c, sizeof c); CHECK(strcmp(a, c), "display_rev bumps on voice switch");
