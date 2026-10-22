@@ -15,7 +15,8 @@
  *    one-shot envelope; the mix happens after both
  *  - the effects: the stutter gate -> the waveshaper -> the tone one-pole -> the three peaking EQ bands
  *    -> ring mod, FM, comb -> the level and the pan -> the stereo delay -> the gated verb (BA3, 1.0.2)
- *    -> the choke fade (the choke goes last so it cuts the delay's feedback tails too)
+ *    -> the stereo widener (1.0.2) -> the choke fade (the choke goes last so it cuts the delay's
+ *    feedback tails too)
  *  - the velocity routings: m = 1 - depth/127 + (depth/127)*vel on the amp, the two sources and the penv depth */
 #include <math.h>
 #include <stdint.h>
@@ -384,6 +385,8 @@ void sd_voice_render(Voice *v, float *bus, int frames, float bpm)
     const float comb01 = PP(P_COMB) * (1.0f / 127.0f);
     const float comb_ms = 0.5f * powf(60.0f, comb01);      /* 0.5 ms at 0 .. 30 ms at 127 */
     const float gverb_m = PP(P_GVERB) * (1.0f / 127.0f);
+    /* The stereo widener knob (1.0.2): 0 = the stage is skipped entirely (exact bypass). */
+    const float width01 = PP(P_WIDTH) * (1.0f / 127.0f);
     /* The stereo delay (spec §8, LAST in the chain): the two times (1..1000 ms, a log knob -- the
      * mapping lives here, the module takes milliseconds), the detune (0..1 -> the vendor's +-2.5%
      * quadratic taper), the feedback (capped at 0.95, the spec's runaway-tail clamp) and the mix
@@ -541,6 +544,10 @@ void sd_voice_render(Voice *v, float *bus, int frames, float bpm)
             if (fabsf(ol) > verb_wet_peak) verb_wet_peak = fabsf(ol);
             if (fabsf(orr) > verb_wet_peak) verb_wet_peak = fabsf(orr);
         }
+
+        /* The stereo widener (1.0.2): M/S, the side scaled 1x..2x, the mid untouched (mono-safe).
+         * The chain's last stage before the choke fade. width 0 = exact bypass. */
+        fx_width(&ol, &orr, width01);
 
         /* The choke fade AFTER the delay: it lives in the voice's own output path (never in the master
          * bus, which would fade the choking voice's own hit as well) and it must cut the delay's

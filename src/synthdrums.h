@@ -101,6 +101,7 @@ typedef struct {
 } VerbSt;
 void verb_reset(VerbSt *v);            /* zeroes state + rings, sets the figure's coefficients */
 void verb_step(VerbSt *v, float inl, float inr, float wet, float *ol, float *orr);
+void fx_width(float *l, float *r, float w01);  /* the chain-end stereo widener (1.0.2) */
 
 /* The stereo delay: Airwindows Doublelay, vendored and adapted (MIT License:
  * third_party/airwindows-doublelay/LICENSE; the source's header names the upstream file). One shared

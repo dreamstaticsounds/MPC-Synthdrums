@@ -1,10 +1,10 @@
-/* MPC Synthdrums -- the voice's effects: the stutter gate, the waveshaper (+ tone), the peaking EQ and
- * the FX row (ring mod, operator FM, comb). The gated verb moved to its own vendored module (1.0.2):
- * third_party/airwindows-brightambience3/brightambience3.c, after the delay.
+/* MPC Synthdrums -- the voice's effects: the stutter gate, the waveshaper (+ tone), the peaking EQ, the
+ * FX row (ring mod, operator FM, comb) and the chain-end stereo widener. The gated verb moved to its
+ * own vendored module (1.0.2): third_party/airwindows-brightambience3/brightambience3.c, after the delay.
  *
  * They sit between the voice's filters and its pan, in chain order:
  *
- *   sources -> filters -> stutter -> dist -> tone -> EQ x3 -> ring -> FM (gated by the osc amp env) -> comb -> vol/pan -> delay -> gated verb
+ *   sources -> filters -> stutter -> dist -> tone -> EQ x3 -> ring -> FM (gated by the osc amp env) -> comb -> vol/pan -> delay -> gated verb -> widener
  *
  * Stutter: a square gate whose rate the "length" knob sets (0.5 .. 40 Hz, an exponential sweep: the
  * roll/echo-machine feel) and whose depth the "strength" knob sets (0 = off, exactly; 1 = the gate
@@ -169,5 +169,19 @@ float fx_comb(CombSt *cb, float x, float ms, float fb, float g)
     cb->buf[cb->w] = x + fb * s;
     cb->w = (cb->w + 1) % COMB_BUF;
     return s;
+}
+
+/* 1.0.2: the stereo widener, the chain's last stage (right before the choke fade). width 0 = exact
+ * bypass; else M/S with the side gain scaled 1x..2x. The mid is never touched, so a mono source
+ * (S = 0) is unchanged bit-for-bit — mono-safe by construction. */
+void fx_width(float *l, float *r, float w01)
+{
+    float m, s;
+
+    if (w01 <= 0.0f) return;                 /* exact bypass (house rule) */
+    m = (*l + *r) * 0.5f;
+    s = (*l - *r) * 0.5f * (1.0f + w01);
+    *l = m + s;
+    *r = m - s;
 }
 

@@ -703,6 +703,39 @@ int main(void)
     sp(x, "delay_detune", 64); sp(x, "delay_l", 64); sp(x, "delay_r", 64); sp(x, "delay_fb", 64);
     sp(x, "delay_wet", 0); sp(x, "voice", 0); sp(x, "osc_decay", 127);
 
+    /* ---- Task 10: the stereo widener at the chain end (1.0.2) ---- */
+    /* exact bypass + mono safety as direct unit calls */
+    {
+        float wl = 0.3f, wr = -0.1f;
+        fx_width(&wl, &wr, 0.0f);
+        CHECK(wl == 0.3f && wr == -0.1f, "widener bypass at 0");
+        wl = 0.3f; wr = 0.3f;                    /* a mono signal: S = 0 */
+        fx_width(&wl, &wr, 1.0f);
+        CHECK(wl == 0.3f && wr == 0.3f, "widener full: a mono signal unchanged (%.6f/%.6f)", wl, wr);
+    }
+    /* mono in the engine: a center-panned hit (pan 0 -> L == R to the bit) survives width 127 */
+    sp(x, "out_pan", 0); sp(x, "width", 0);
+    note(x, 36, 127); StatLR wi0 = run_lr(x, 40);
+    sp(x, "width", 127);
+    note(x, 36, 127); StatLR wi1 = run_lr(x, 40);
+    CHECK(wi0.left > 1e-4 && wi1.left > 1e-4, "widener preludes are audible (%.6f/%.6f)", wi0.left, wi1.left);
+    CHECK(fabs(wi1.left - wi1.right) < 1e-6, "mono source unchanged by the widener (%.6f/%.6f)", wi1.left, wi1.right);
+    /* widening: hard-panned left, the far side (right) comes up, monotonically in the knob */
+    sp(x, "out_pan", -63); sp(x, "width", 0);
+    note(x, 36, 127); StatLR h0 = run_lr(x, 40);
+    sp(x, "width", 63);
+    note(x, 36, 127); StatLR h63 = run_lr(x, 40);
+    sp(x, "width", 127);
+    note(x, 36, 127); StatLR h127 = run_lr(x, 40);
+    CHECK(h127.right > h0.right * 5.0, "widener brings up the far side (%.6f vs %.6f)", h127.right, h0.right);
+    CHECK(h63.right > h0.right && h63.right < h127.right, "widener is monotonic in the knob");
+    CHECK(h127.left > h0.left * 0.4 && h127.left < h0.left * 2.0, "the near side stays sane (%.6f vs %.6f)", h127.left, h0.left);
+    /* determinism at full width (stateless — a cheap guard) */
+    note(x, 36, 127); StatLR wd1 = run_lr(x, 40);
+    note(x, 36, 127); StatLR wd2 = run_lr(x, 40);
+    CHECK(fabs(wd1.left - wd2.left) < 1e-9 && fabs(wd1.right - wd2.right) < 1e-9, "widener is bit-identical across hits");
+    sp(x, "width", 0); sp(x, "out_pan", 0);
+
     /* ---- Task 9: the three LFOs (modulation, retrig, sync) ---- */
     {
         int di = 0;
