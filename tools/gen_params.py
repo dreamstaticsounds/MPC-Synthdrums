@@ -11,8 +11,9 @@ numbers for "display": "int" parameters and the option's index (0-based: VOICE 0
 twelfth) for option lists, and the engine keeps them as they are (src/synth.h: a patch is one float per
 parameter per voice).
 
-The edit panel edits the selected voice (src/patches.c): P_PITCH .. P_CHOKE, EDIT_PARAMS of them, all
-PK_PATCH and contiguous. Everything after them selects/auditions the voices or resets the kit.
+The edit panel edits the selected voice (src/patches.c): the PK_PATCH params in VST index order (P_PITCH ..
+P_CHOKE first, EDIT_PARAMS of them). New PK_PATCH params may append anywhere after index 34; P2E/E2P in
+params_gen.h map VST enum order <-> p[] edit order.
 `pitch` comes first: the framework's host test turns a data wheel click into 1% of a param's range and
 expects one step, so the first "display": "int" param must span at most 100 (-24..24 = 48 here; a
 0..127 param would read 1.27 and round to two steps -- GAIAXXL's first int is pitch for the same reason).
@@ -110,11 +111,13 @@ for p in PARAMS:   # momentary keys: a plain 0..1 with no int display
         p["min"], p["max"] = 0, 1
         p.pop("display", None)
 
-# the edit panel: the contiguous PK_PATCH block, one voice's parameters
+# the edit panel: PK_PATCH params in VST index order define p[] edit order (append-only). The 1.0.0 block
+# must keep VST indices 0..34 (old MPC projects save by index); later appends may sit after the UI/trig params.
 _edit = [i for i, p in enumerate(PARAMS) if p["kind"] == "PK_PATCH"]
-assert _edit == list(range(_edit[0], _edit[-1] + 1)), "the edit panel's parameters must be contiguous"
+assert _edit[:35] == list(range(35)), "the 1.0.0 edit block must keep VST indices 0..34"
+assert (PARAMS[_edit[0]]["key"], PARAMS[_edit[34]]["key"]) == ("pitch", "choke"), "P_PITCH .. P_CHOKE"
+EDIT_KEYS = [PARAMS[i]["key"] for i in _edit]          # p[] order (append-only from here on)
 EDIT_PARAMS = len(_edit)
-assert (PARAMS[_edit[0]]["key"], PARAMS[_edit[-1]]["key"]) == ("pitch", "choke"), "P_PITCH .. P_CHOKE"
 
 
 def params_json():
@@ -141,6 +144,17 @@ def header():
           "#define P_EDIT_FIRST %s" % cname(PARAMS[_edit[0]]["key"]), "",
           "/* the edit panel: one contiguous PK_PATCH block (the selected voice), P_PITCH .. P_CHOKE */",
           "#define EDIT_PARAMS %d" % EDIT_PARAMS, "",
+          "/* enum -> p[] edit index (-1 when the param is not PK_PATCH), and its inverse */",
+          "static const short P2E[P_COUNT] = {"]
+    _p2e = {i: k for k, i in enumerate(_edit)}
+    for i, p in enumerate(PARAMS):
+        L.append("    %s," % _p2e.get(i, -1))
+    L += ["};", "", "static const short E2P[EDIT_PARAMS] = {"]
+    for i in _edit:
+        L.append("    %d," % i)
+    L += ["};", "",
+          "_Static_assert(%d == 0 && %d == EDIT_PARAMS - 1, \"P_PITCH..P_CHOKE must map to p[] 0..EDIT_PARAMS-1\");"
+          % (_edit[0], _edit[34]), "",
           "static const ParamDef PDEF[P_COUNT] = {"]
     for p in PARAMS:
         L.append('    {"%s", %s, %d, %d, %g, %d},' % (p["key"], p["kind"], p["min"], p["max"], p["default"],

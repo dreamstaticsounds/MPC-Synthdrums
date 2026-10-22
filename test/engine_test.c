@@ -246,6 +246,22 @@ int main(void)
     CHECK(!strcmp(a, c), "state round trip");
     for (int v = 0; v < 12; v++) { char k[32]; snprintf(k, sizeof k, "%d", 10 + v); sp(y, "voice", v);
       E->get_param(y, "osc_decay", b, sizeof b); CHECK(!strcmp(b, k), "voice idx %d survived the chunk", v); }
+    /* Task 1: the edit-order mapping -- the first 35 params keep their 1.0.0 positions */
+    {
+        int k, ok = 1;
+        for (k = 0; k < 35; k++) if (E2P[k] != P_PITCH + k || P2E[P_PITCH + k] != k) ok = 0;
+        CHECK(ok, "E2P/P2E identity for the 1.0.0 edit panel");
+        CHECK(P2E[P_VOICE] == -1 && P2E[P_KIT_INIT] == -1, "non-patch params are not in p[]");
+    }
+    /* Task 1: a 1.0.0-format chunk (35 values, ends at choke) still loads */
+    {
+        static const char *old = "MSDR 1\nsel=0\nbase=36\n"
+            "v1=0,127,0,0,0,0,0,64,0,0,0,0,0,64,0,64,0,64,0,127,64,0,0,0,127,0,64,0,64,0,64,0,100,0,4\n";
+        E->set_param(x, "state", old);
+        E->get_param(x, "osc_decay", b, sizeof b); CHECK(!strcmp(b, "64"), "old chunk: osc_decay");
+        E->get_param(x, "choke", b, sizeof b);     CHECK(!strcmp(b, "4"), "old chunk: last old param (choke)");
+        E->set_param(x, "state", a);               /* put the captured state back for the tests below */
+    }
     /* display_rev bumps on voice switch, not on plain edits */
     E->get_param(x, "display_rev", a, sizeof a); sp(x, "voice", 5);
     E->get_param(x, "display_rev", c, sizeof c); CHECK(strcmp(a, c), "display_rev bumps on voice switch");

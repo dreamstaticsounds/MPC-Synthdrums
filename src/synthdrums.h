@@ -13,9 +13,8 @@
 #define FILT_MIN_HZ 20.0f
 #define FILT_MAX_HZ 18000.0f
 
-/* The edit panel is one contiguous PK_PATCH block (P_PITCH .. P_CHOKE): every parameter indexed by
- * (param - P_EDIT_FIRST) lives in the selected voice's p[]. */
-_Static_assert(P_CHOKE - P_EDIT_FIRST + 1 == EDIT_PARAMS, "the edit panel must be one contiguous PK_PATCH block");
+/* The edit panel is the PK_PATCH params (P_PITCH .. P_CHOKE first): P2E maps VST enum order to the
+ * selected voice's p[] index; the generated static assert in params_gen.h pins the 1.0.0 block. */
 
 /* src/filter.c: the voice's biquad filter (RBJ's cookbook: 12 dB/oct, low pass / band pass / high pass with
  * a resonant peak). The coefficients are normalized (a0 = 1), the delay line is Direct Form I and the env
