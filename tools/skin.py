@@ -136,16 +136,6 @@ def panel(pg, rect, title, accent=ACCENT, dim=False):
     text(pg, (x + 8 + tw / 2, y + 20), title, 20, TAB_INK)
 
 
-def display(pg, rect, title):
-    """a display block: the original's graphic displays, drawn as static art"""
-    x, y, w, h = rect
-    rrect(pg, rect, fill=ART_BG, outline=ACCENT, width=2, radius=10)
-    tw = font(18).getlength(title) + 24
-    rrect(pg, (x + 8, y + 6, tw, 26), fill=ACCENT, radius=6)
-    text(pg, (x + 8 + tw / 2, y + 19), title, 18, TAB_INK)
-    return (x + 18, y + 44, w - 36, h - 62)      # the plot area
-
-
 def knob_scale(pg, cx, cy, r, bipolar=False):
     """the ticks around a parameter knob"""
     for k in range(11):
@@ -238,34 +228,6 @@ def knob_row(pg, items, x0, y0, w, size=76, px=18, lcd_w=84):
              label_w=min(step - 8, 150), label_px=px)
 
 
-# ---------------------------------------------------------------- the static display art
-
-
-def keyboard_art(pg, rect):
-    """the global page's display: the twelve voices on one octave of the keyboard"""
-    area = display(pg, rect, "VOICE MAP  ·  ONE OCTAVE, TWELVE VOICES")
-    x0, y0, w, h = area
-    whites = [0, 2, 4, 5, 7, 9, 11]
-    blacks = {1: 0, 3: 1, 6: 3, 8: 4, 10: 5}
-    ww = w / 7.0
-    wh = h * 0.76
-    for i in range(7):
-        x = x0 + i * ww
-        rrect(pg, (x + 3, y0 + 2, ww - 6, wh), fill=(186, 182, 176), outline=(104, 100, 96), width=2, radius=6)
-    for semi, i in blacks.items():
-        x = x0 + (i + 1) * ww - ww * 0.29
-        rrect(pg, (x, y0 + 2, ww * 0.58, wh * 0.60), fill=(26, 26, 26), outline=ACCENT, width=2, radius=5)
-    for i in range(12):
-        semi = i
-        if semi in whites:
-            x = x0 + whites.index(semi) * ww
-            text(pg, (x + ww / 2, y0 + wh - 28), "%d" % (semi + 1), 16, (34, 32, 30))
-        else:
-            x = x0 + (blacks[semi] + 1) * ww - ww * 0.29
-            text(pg, (x + ww * 0.29, y0 + wh * 0.60 - 22), "%d" % (semi + 1), 16, ACCENT)
-    text(pg, (x0, y0 + wh + 26), "VOICE 1-12  ·  THE OCTAVE ABOVE THE BASE NOTE", 16, INK_DIM, "lm")
-
-
 # ---------------------------------------------------------------- the pages
 def osc_page():
     pg = Page("OSC")
@@ -350,22 +312,33 @@ def fx_page():
 
 def glb_page():
     pg = Page("GLB")
-    text(pg, (18, 27), "GLOBAL", 17, INK_DIM, "lm")
-    panel(pg, (16, 58, 640, 212), "KEYBOARD")
-    knob(pg, "base_note", 96, 176, 62, "BASE NOTE", lcd_rect=(54, 213, 84, 30), label_w=140)
-    text(pg, (300, 116), "VOICE", 16, INK_DIM)
-    momentary(pg, "voice_prev", (208, 150, 54, 46), "", arrow="left")
-    readout(pg, "voice_name", (276, 150, 130, 46), 20)
-    momentary(pg, "voice_next", (420, 150, 54, 46), "", arrow="right")
-    panel(pg, (668, 58, 280, 212), "KIT")
-    momentary(pg, "kit_init", (692, 108, 232, 62), "KIT INIT", 20)
-    text(pg, (808, 200), "RESET ALL 12 VOICES", 16, INK_DIM)
-    panel(pg, (960, 58, 304, 212), "ABOUT")
+    text(pg, (1272, 27), "GLOBAL", 20, INK_DIM, "rm")
+    # CONTROL: the selected voice's navigation plus every velocity-scaled parameter and the base
+    # note (the old OSC CONTROL panel moved here with the strip removal)
+    panel(pg, (16, 48, 1248, 205), "CONTROL")
+    text(pg, (181, 117), "VOICE", 16, INK_DIM)
+    momentary(pg, "voice_prev", (40, 137, 54, 62), "", arrow="left")
+    readout(pg, "voice_name", (106, 137, 150, 62))
+    momentary(pg, "voice_next", (268, 137, 54, 62), "", arrow="right")
+    knob_row(pg, [("base_note", "BASE NOTE"), ("vel_to_vol", "VEL→VOL"), ("vel_to_cut", "VEL→CUT"),
+                  ("vel_to_noise", "VEL→NOISE"), ("vel_to_osc", "VEL→OSC"), ("vel_to_penv", "VEL→P.ENV")],
+             370, 162, 886)
+    # KIT / OUTPUT / CHOKE / ABOUT across the bottom row
+    panel(pg, (16, 269, 220, 343), "KIT")
+    momentary(pg, "kit_init", (40, 397, 172, 62), "KIT INIT", 20)
+    text(pg, (126, 499), "RESET ALL 12 VOICES", 16, INK_DIM)
+    panel(pg, (248, 269, 380, 343), "OUTPUT")
+    radio(pg, "out_sel", [(264, 387 + 48 * i, 100, 44) for i in range(3)], gen_params.OUT_SELS, "key", 17)
+    knob_row(pg, [("out_pan", "PAN"), ("out_vol", "VOL")], 380, 452, 220)
+    panel(pg, (640, 269, 354, 343), "CHOKE")
+    radio(pg, "choke", [(656, 315 + 48 * i, 322, 44) for i in range(5)], gen_params.CHOKE_NAMES, "key", 17)
+    text(pg, (817, 570), "RETRIGGERING A VOICE", 15, INK_DIM)
+    text(pg, (817, 590), "SILENCES ITS GROUP", 15, INK_DIM)
+    panel(pg, (1006, 269, 258, 343), "ABOUT")
     about = ["MPC SYNTHDRUMS", "12-VOICE SYNTH DRUM BOX", "DREAM STATIC SOUNDS",
              "INSPIRED BY DSK SYNTHDRUMS", "NOT AFFILIATED WITH DSK MUSIC"]
     for i, line in enumerate(about):
-        fit_text(pg, (976, 92 + 34 * i, 272, 26), line, 16 if i == 0 else 15, INK if i == 0 else INK_DIM)
-    keyboard_art(pg, (16, 282, 1248, 330))
+        fit_text(pg, (1022, 372 + 34 * i, 226, 26), line, 16 if i == 0 else 15, INK if i == 0 else INK_DIM)
     return pg
 
 
@@ -380,7 +353,8 @@ QLINK_BANKS = {
                ["nfilt_mode", "noise_filter", "nfilt_res", "nfilt_env_amount", "nfilt_env_decay", "nfilt_vel"]],
     "FX": [["dist_drive", "ring_mod", "fm_index", "comb", "gverb", "delay_detune", "delay_l", "delay_r"],
            ["delay_fb", "delay_wet"]],
-    "GLB": [["base_note"]],
+    "GLB": [["base_note", "vel_to_vol", "vel_to_cut", "vel_to_noise", "vel_to_osc", "vel_to_penv", "out_pan",
+             "out_vol"]],
 }
 
 
