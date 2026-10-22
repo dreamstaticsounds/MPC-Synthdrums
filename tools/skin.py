@@ -1,14 +1,15 @@
 #!/usr/bin/env python3
-"""MPC Synthdrums' five pages: their geometry, their artwork and every control in MPC's skin (TUI.json).
+"""MPC Synthdrums' six pages: their geometry, their artwork and every control in MPC's skin (TUI.json).
 
     python3 tools/skin.py --layout              writes layout.conf (the tabs and their Q-Links, for mpc-vst-plugins)
     python3 tools/skin.py "<skin>/Plugin Skins" builds the pages into the skin gen_vst.py made from layout.conf
     python3 tools/skin.py --preview DIR         draws each page with its controls at their defaults (offline check)
 
-Pages (1280 x 628, MPC's whole plugin area): OSC, PITCH, FILTER, FX (the four voice pages) and GLB (the global
-page). Each page shows only its right-aligned name: hitting a pad selects that voice for editing (and plays it),
-so the old VOICE selector strip (segments, name, TRIG) is gone and its space goes to bigger controls. The panels
-carry the original DSK SynthDrums' sections in the original's order, with the original's short labels.
+Pages (1280 x 628, MPC's whole plugin area): OSC, PITCH, FILTER, FX (the four voice pages), LFO (the three
+per-voice modulators) and CTRL (the global page). Each page shows only its right-aligned name: hitting a pad
+selects that voice for editing (and plays it), so the old VOICE selector strip (segments, name, TRIG) is gone
+and its space goes to bigger controls. The panels carry the original DSK SynthDrums' sections in the
+original's order, with the original's short labels.
 
 Look: the original's black-and-orange panel: near-black ground, dark grey panels, orange frames and tabs, warm
 white lettering, dark value windows. The caps: tools/caps.py (aluminium-top knobs). The lettering: DejaVu Sans
@@ -56,7 +57,7 @@ KNOB_FRAMES = 128
 KNOB_SPAN = 150
 MAX_STRIP = 12288
 
-TABS = ["OSC", "PITCH", "FILTER", "FX", "GLB"]
+TABS = ["OSC", "PITCH", "FILTER", "FX", "LFO", "CTRL"]
 PARAMS = gen_params.PARAMS
 INDEX = {p["key"]: i for i, p in enumerate(PARAMS)}
 PBYKEY = {p["key"]: p for p in PARAMS}
@@ -310,9 +311,27 @@ def fx_page():
     return pg
 
 
+def lfo_page():
+    pg = Page("LFO")
+    text(pg, (1272, 27), "LFO", 20, INK_DIM, "rm")
+    # three identical panels: sync/retrig keys, then rate, depth and the three option params as
+    # plain knobs for now (Task 14 turns wave/dest/div into popups over hidden __open params)
+    for n in (1, 2, 3):
+        x = 16 + 420 * (n - 1)
+        panel(pg, (x, 48, 408, 564), "LFO %d" % n)
+        text(pg, (x + 36, 112), "SYNC", 16, INK_DIM)
+        radio(pg, "lfo%d_sync" % n, [(x + 64, 90, 60, 44), (x + 128, 90, 60, 44)], ["OFF", "ON"], "key", 17)
+        text(pg, (x + 224, 112), "RETRIG", 16, INK_DIM)
+        radio(pg, "lfo%d_retrig" % n, [(x + 260, 90, 60, 44), (x + 324, 90, 60, 44)], ["OFF", "ON"], "key", 17)
+        knob_row(pg, [("lfo%d_rate" % n, "RATE"), ("lfo%d_depth" % n, "DEPTH"), ("lfo%d_wave" % n, "WAVE")],
+                 x, 260, 408, 86)
+        knob_row(pg, [("lfo%d_dest" % n, "DEST"), ("lfo%d_div" % n, "DIV")], x, 467, 408, 86)
+    return pg
+
+
 def glb_page():
-    pg = Page("GLB")
-    text(pg, (1272, 27), "GLOBAL", 20, INK_DIM, "rm")
+    pg = Page("CTRL")
+    text(pg, (1272, 27), "CTRL", 20, INK_DIM, "rm")
     # CONTROL: the selected voice's navigation plus every velocity-scaled parameter and the base
     # note (the old OSC CONTROL panel moved here with the strip removal)
     panel(pg, (16, 48, 1248, 205), "CONTROL")
@@ -342,7 +361,7 @@ def glb_page():
     return pg
 
 
-PAGES = [osc_page, pitch_page, filter_page, fx_page, glb_page]
+PAGES = [osc_page, pitch_page, filter_page, fx_page, lfo_page, glb_page]
 
 
 # ---------------------------------------------------------------- Q-Links: each page's knobs, 8 per bank
@@ -353,8 +372,10 @@ QLINK_BANKS = {
                ["nfilt_mode", "noise_filter", "nfilt_res", "nfilt_env_amount", "nfilt_env_decay", "nfilt_vel"]],
     "FX": [["dist_drive", "ring_mod", "fm_index", "comb", "gverb", "delay_detune", "delay_l", "delay_r"],
            ["delay_fb", "delay_wet"]],
-    "GLB": [["base_note", "vel_to_vol", "vel_to_cut", "vel_to_noise", "vel_to_osc", "vel_to_penv", "out_pan",
-             "out_vol"]],
+    "LFO": [["lfo1_rate", "lfo1_depth", "lfo1_wave", "lfo1_dest", "lfo1_div", "lfo2_rate", "lfo2_depth",
+             "lfo2_dest"]],
+    "CTRL": [["base_note", "vel_to_vol", "vel_to_cut", "vel_to_noise", "vel_to_osc", "vel_to_penv", "out_pan",
+              "out_vol"]],
 }
 
 
