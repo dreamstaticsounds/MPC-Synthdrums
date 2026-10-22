@@ -190,6 +190,14 @@ void patch_init_voice(Voice *v);   /* INIT_PATCH (generated, p[] order) fills th
 void hz_str(float hz, char *buf, int n);   /* "940 Hz" / "12.5 kHz": the dynamic frequency readouts */
 void patch_init_kit(Synth *s);
 
+/* The tempo-division grid shared by the stutter and the delay syncs (1.0.2): the beat multiplier is
+ * beats per cycle (1/4 note = 1.0), so rate = (bpm/60)/mult and time = mult*60/bpm seconds. Defined in
+ * src/voice.c; the display branches in src/synth.c read the words, and the knob quantize expressions
+ * are duplicated there (keep them in sync). */
+#define SD_DIV_COUNT 18
+extern const float SD_DIV_BEATS[SD_DIV_COUNT];
+extern const char *const SD_DIV_WORDS[SD_DIV_COUNT];
+
 /* src/voice.c: one voice's DSP -- the oscillator, the noise, the pitch and amp envelopes, the x-mod and the
  * velocity routings. Nothing here allocates and nothing here touches the other voices. */
 void sd_voice_reset(Voice *v);                              /* zero the DSP state */

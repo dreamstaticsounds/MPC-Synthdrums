@@ -212,6 +212,18 @@ static float maxf(const float *a, int n)
     return m;
 }
 
+/* maximal runs of windows at/below thr (edge-truncated runs count): the gate's rhythm, which the
+ * closed-time fraction cannot show (50% at any rate). */
+static int quiet_runs(const float *a, int n, float thr)
+{
+    int i = 0, runs = 0;
+    while (i < n) {
+        if (a[i] <= thr) { while (i < n && a[i] <= thr) i++; runs++; }
+        else i++;
+    }
+    return runs;
+}
+
 int main(void)
 {
     E = mpc_engine();
@@ -662,12 +674,42 @@ int main(void)
 sp(x, "voice", 0); sp(x, "base_note", 36);
 sp(x, "src_mix", 0); sp(x, "osc_decay", 127); sp(x, "vel_to_vol", 127); sp(x, "vel_to_cut", 0);
 sp(x, "filter_cutoff", 127); sp(x, "filter_res", 0); sp(x, "filter_mode", 0); sp(x, "fenv_amount", 0);
-/* stutter gates the amplitude */
-sp(x, "stutter_length", 90); sp(x, "stutter_strength", 127); sp(x, "trig", 1);
-float w[12]; run_windows(x, 12, 10, w);
-CHECK(maxf(w, 12) > 0.01 && minf(w, 12) < maxf(w, 12) * 0.3, "stutter gates (%.4f..%.4f)", minf(w, 12), maxf(w, 12));
-sp(x, "stutter_strength", 0); sp(x, "trig", 1); run_windows(x, 12, 10, w);
-CHECK(minf(w, 12) > maxf(w, 12) * 0.75, "strength 0 = no gate, decay only (%.4f..%.4f)", minf(w, 12), maxf(w, 12));
+/* stutter: tempo-synced gate (1.0.2) — divisions, OFF = exact bypass, BPM-follow */
+    float w[24], wb[100];
+    sp(x, "stutter_length", 90); sp(x, "stutter_strength", 127); sp(x, "trig", 1);
+    run_windows(x, 12, 10, w);   /* 90 -> "1/16D" = 5.33 Hz @120: closure 93 ms >> the 29 ms window */
+    CHECK(maxf(w, 12) > 0.01 && minf(w, 12) < maxf(w, 12) * 0.3, "stutter gates (%.4f..%.4f)", minf(w, 12), maxf(w, 12));
+    sp(x, "stutter_strength", 0); sp(x, "trig", 1); run_windows(x, 12, 10, w);
+    CHECK(minf(w, 12) > maxf(w, 12) * 0.75, "strength 0 = no gate, decay only (%.4f..%.4f)", minf(w, 12), maxf(w, 12));
+    /* OFF (knob 0) is an exact bypass even at full strength */
+    sp(x, "stutter_length", 0); sp(x, "stutter_strength", 127); sp(x, "trig", 1);
+    run_windows(x, 24, 10, w);
+    CHECK(minf(w, 24) > maxf(w, 24) * 0.75, "stutter OFF is a bypass (%.4f..%.4f)", minf(w, 24), maxf(w, 24));
+    /* the rate follows the BPM: "1/4" (knob 56) = 2 Hz @120 vs 1 Hz @60 — quiet RUNS differ 3:1
+     * (closed-time is 50% at any rate, so window counts cannot tell the two apart) */
+    sp(x, "stutter_length", 56); sp(x, "stutter_strength", 127);
+    sp(x, "osc_decay", 127); sp(x, "src_mix", 0);
+    sp(x, "lfo_bpm", 120);
+    sp(x, "trig", 1); run_windows(x, 100, 5, wb);
+    int qa = quiet_runs(wb, 100, 0.15f * maxf(wb, 100));
+    sp(x, "lfo_bpm", 60);
+    sp(x, "trig", 1); run_windows(x, 100, 5, wb);
+    int qb = quiet_runs(wb, 100, 0.15f * maxf(wb, 100));
+    CHECK(qa == 3 && qb == 1, "stutter gate runs at 2 Hz @120 BPM, 1 Hz @60 (%d vs %d)", qa, qb);
+    sp(x, "lfo_bpm", 120);
+    /* the division display */
+    sp(x, "stutter_length", 0); E->get_param(x, "stutter_length_display", b, sizeof b);
+    CHECK(!strcmp(b, "OFF"), "stutter display OFF (%s)", b);
+    sp(x, "stutter_length", 56); E->get_param(x, "stutter_length_display", b, sizeof b);
+    CHECK(!strcmp(b, "1/4"), "stutter display 1/4 (%s)", b);
+    sp(x, "stutter_length", 127); E->get_param(x, "stutter_length_display", b, sizeof b);
+    CHECK(!strcmp(b, "1/32T"), "stutter display 1/32T (%s)", b);
+    /* per-hit determinism with the gate engaged at a division */
+    sp(x, "stutter_strength", 127);
+    sp(x, "trig", 1); cap(x, A, 128);
+    sp(x, "trig", 1); cap(x, B, 128);
+    CHECK(capdiff(A, B, 128) < 1e-9, "stutter state resets per hit (bit-identical)");
+    sp(x, "stutter_strength", 0);
 /* dist: changes the wave (harmonics) exactly, stays bounded — scale-independent via capdiff */
 sp(x, "osc_decay", 100); sp(x, "dist_drive", 0); sp(x, "trig", 1); cap(x, A, 60);
 sp(x, "dist_drive", 127); sp(x, "trig", 1); cap(x, B, 60);

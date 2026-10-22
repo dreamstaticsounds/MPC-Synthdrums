@@ -283,6 +283,11 @@ static int get_param(void *p, const char *k, char *buf, int n)
                     snprintf(t, sizeof t, "%+.1f%%", (double)(td * fabsf(td) * 2.5f));
                     return put(buf, n, t);
                 }
+                if (j == P_STUTTER_LENGTH) {
+                    /* the division grid: same quantize as sd_voice_render's stut_step (keep in sync) */
+                    const int st = (int)(v * 18.0f / 127.0f + 0.5f);
+                    return put(buf, n, st == 0 ? "OFF" : SD_DIV_WORDS[st - 1]);
+                }
                 if (j == P_LFO1_RATE || j == P_LFO2_RATE || j == P_LFO3_RATE) {
                     /* synced: the division governs the rate (the knob reads SYNC); free-run: the
                      * knob's 0.02..20 Hz exponential sweep, the same mapping the voice uses */

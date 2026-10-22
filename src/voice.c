@@ -124,6 +124,15 @@ static const int lfo_depth_k[3] = { P_LFO1_DEPTH, P_LFO2_DEPTH, P_LFO3_DEPTH };
 static const float BEAT_MULT[12] = { 8.0f, 6.0f, 4.0f, 3.0f, 2.0f, 1.5f, 1.0f, 0.5f, 0.25f, 4.0f / 3.0f,
                                      2.0f / 3.0f, 1.0f / 3.0f };
 
+/* The 1.0.2 division grid (synthdrums.h): beats per cycle and the readout words, index 0 = the longest.
+ * The LFO syncs keep their own 12-entry BEAT_MULT above (unchanged from 1.0.1). */
+const float SD_DIV_BEATS[SD_DIV_COUNT] = {
+    16.0f, 8.0f, 4.0f, 3.0f, 2.0f, 4.0f / 3.0f, 1.5f, 1.0f, 2.0f / 3.0f,
+    0.75f, 0.5f, 1.0f / 3.0f, 0.375f, 0.25f, 1.0f / 6.0f, 0.1875f, 0.125f, 1.0f / 12.0f };
+const char *const SD_DIV_WORDS[SD_DIV_COUNT] = {
+    "4 bars", "2 bars", "1 bar", "1/2D", "1/2", "1/2T", "1/4D", "1/4", "1/4T",
+    "1/8D", "1/8", "1/8T", "1/16D", "1/16", "1/16T", "1/32D", "1/32", "1/32T" };
+
 void sd_voice_reset(Voice *v)
 {
     v->vel = 0.0f;          /* the trigger's velocity and the four crossfade scalars it feeds */
@@ -331,9 +340,13 @@ void sd_voice_render(Voice *v, float *bus, int frames, float bpm)
     float nfenv0 = 0.0f;
     int i;
 
-    /* The stutter: the gate's rate (0.5 .. 40 Hz, an exponential sweep -- the roll/echo-machine feel)
-     * and the gate's depth (0 = off, exactly; 1 = the gate closes completely between the bursts). */
-    const float stut_rate = 0.5f * powf(80.0f, PP(P_STUTTER_LENGTH) * (1.0f / 127.0f));
+    /* The stutter: the gate's rate from the tempo grid (1.0.2) — the knob picks a division: 0 = OFF
+     * (fx_stutter_step passes the signal through exactly), 1..18 = 4 bars .. 1/32 trip; rate =
+     * (bpm/60)/beats-per-cycle. The depth is unchanged (0 = off, exactly; 1 = fully closed bursts).
+     * The quantize expression is duplicated in synth.c's display branch: keep the two in sync. */
+    const int stut_step = (int)(PP(P_STUTTER_LENGTH) * 18.0f / 127.0f + 0.5f);
+    const float stut_rate = stut_step == 0 ? 0.0f
+                            : (bpm * (1.0f / 60.0f)) / SD_DIV_BEATS[stut_step - 1];
     const float stut_depth = PP(P_STUTTER_STRENGTH) * (1.0f / 127.0f);
     /* The waveshaper's drive: 0 = clean (the shaper is then exactly unity). */
     const float drive01 = PP(P_DIST_DRIVE) * (1.0f / 127.0f);
