@@ -301,7 +301,9 @@ static int get_param(void *p, const char *k, char *buf, int n)
                     const int sk = j == P_LFO1_RATE ? P_LFO1_SYNC
                                   : j == P_LFO2_RATE ? P_LFO2_SYNC : P_LFO3_SYNC;
                     if (s->v[s->sel].p[P2E[sk]] != 0.0f) return put(buf, n, "SYNC");
-                    hz_str(0.02f * powf(1000.0f, v * (1.0f / 127.0f)), t, sizeof t);
+                    /* 1.0.2: the free-run rate reads in 0.1 Hz — the range (0.02..20 Hz) always
+                     * shows one decimal; the same exponential mapping the voice uses */
+                    snprintf(t, sizeof t, "%.1f Hz", 0.02f * powf(1000.0f, v * (1.0f / 127.0f)));
                     return put(buf, n, t);
                 }
                 return 0;   /* unknown dynamic display: the wrapper's default numeric path */

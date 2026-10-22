@@ -781,6 +781,13 @@ int main(void)
         E->get_param(x, "lfo1_rate_display", b, sizeof b); CHECK(!strcmp(b, "SYNC"), "rate shows SYNC (%s)", b);
         sp(x, "lfo1_sync", 0);
         E->get_param(x, "lfo1_rate_display", b, sizeof b); CHECK(strstr(b, "Hz"), "rate shows Hz (%s)", b);
+        /* 1.0.2: the rate knob reads in 0.1 Hz (the 0.02..20 Hz range always shows one decimal) */
+        sp(x, "lfo1_rate", 0);   E->get_param(x, "lfo1_rate_display", b, sizeof b); CHECK(!strcmp(b, "0.0 Hz"), "lfo1 rate 0 (%s)", b);
+        sp(x, "lfo1_rate", 100); E->get_param(x, "lfo1_rate_display", b, sizeof b); CHECK(!strcmp(b, "4.6 Hz"), "lfo1 rate 100 (%s)", b);
+        sp(x, "lfo1_rate", 127); E->get_param(x, "lfo1_rate_display", b, sizeof b); CHECK(!strcmp(b, "20.0 Hz"), "lfo1 rate 127 (%s)", b);
+        sp(x, "lfo2_rate", 100); E->get_param(x, "lfo2_rate_display", b, sizeof b); CHECK(!strcmp(b, "4.6 Hz"), "lfo2 rate 100 (%s)", b);
+        sp(x, "lfo3_rate", 64);  E->get_param(x, "lfo3_rate_display", b, sizeof b); CHECK(!strcmp(b, "0.6 Hz"), "lfo3 rate 64 (%s)", b);
+        sp(x, "lfo1_rate", 0); sp(x, "lfo2_rate", 0); sp(x, "lfo3_rate", 0);
         /* leave the LFOs off (depth 0) for the blocks below */
         sp(x, "lfo1_depth", 0); sp(x, "lfo1_dest", 0); sp(x, "lfo1_retrig", 1); sp(x, "out_vol", 100);
         sp(x, "src_mix", 0);
