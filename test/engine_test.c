@@ -110,6 +110,14 @@ static StatLR run_lr(void *x, int blocks)
     return r;
 }
 
+/* run_lr, but skipping blocks first (windows at a specific echo time; Task 4) */
+static StatLR run_lr_from(void *x, int skip, int blocks)
+{
+    int i;
+    for (i = 0; i < skip; i++) E->render(x, buf, 128);
+    return run_lr(x, blocks);
+}
+
 /* the zero crossings of the mono fold (both channels carry the same signal today) */
 static int zc(void *x, int blocks)
 {
@@ -615,6 +623,37 @@ int main(void)
     CHECK(!strcmp(b, "+2.5%"), "detune display (%s)", b);
     sp(x, "delay_detune", 0); E->get_param(x, "delay_detune_display", b, sizeof b);
     CHECK(!strcmp(b, "-2.5%"), "detune display lo (%s)", b);
+    /* delay sync (1.0.2): the synced knob reads as a division, the unsynced one as ms */
+    sp(x, "delay_l_sync", 1); sp(x, "delay_l", 50); E->get_param(x, "delay_l_display", b, sizeof b);
+    CHECK(!strcmp(b, "1/4"), "delay display synced (%s)", b);
+    sp(x, "delay_l", 127); E->get_param(x, "delay_l_display", b, sizeof b);
+    CHECK(!strcmp(b, "1/32T"), "delay display synced hi (%s)", b);
+    sp(x, "delay_l_sync", 0); sp(x, "delay_l", 50); E->get_param(x, "delay_l_display", b, sizeof b);
+    CHECK(!strcmp(b, "15 ms"), "delay display unsynced (%s)", b);
+    /* per-side independence: L synced to "1/4" (500 ms @120), R free at 1 ms */
+    sp(x, "delay_wet", 127); sp(x, "delay_fb", 0);
+    sp(x, "delay_l_sync", 1); sp(x, "delay_l", 50);
+    sp(x, "delay_r_sync", 0); sp(x, "delay_r", 0);
+    sp(x, "osc_decay", 20);                              /* short body */
+    note(x, 36, 127); StatLR s1 = run_lr_from(x, 0, 50);   /* 0..145 ms */
+    CHECK(s1.left < 1e-5, "synced L not yet (%.6f)", s1.left);
+    CHECK(s1.right > 1e-4, "unsynced R echoes at 1 ms (%.6f)", s1.right);
+    note(x, 36, 127); StatLR s2 = run_lr_from(x, 160, 40); /* 464..580 ms */
+    CHECK(s2.left > 1e-4, "synced L echoes at 1/4 (%.6f)", s2.left);
+    /* the same division follows the BPM: "1/4" at 60 = 1000 ms */
+    sp(x, "lfo_bpm", 60);
+    note(x, 36, 127); StatLR s3 = run_lr_from(x, 160, 40);
+    CHECK(s3.left < 1e-5, "synced L still quiet at 60 BPM (%.6f)", s3.left);
+    note(x, 36, 127); StatLR s4 = run_lr_from(x, 345, 30); /* 1001..1088 ms */
+    CHECK(s4.left > 1e-4, "synced L echoes at 1000 ms (%.6f)", s4.left);
+    sp(x, "lfo_bpm", 120);
+    /* the clamp: "4 bars" at 120 = 8000 ms -> 1000 ms (the line's cap), not an 8 s horizon */
+    sp(x, "delay_l", 0);
+    note(x, 36, 127); Stat cE = run_from(x, 345, 30);     /* 1001..1088 ms */
+    CHECK(cE.rms > 1e-4, "clamped echo at ~1000 ms (%.6f)", cE.rms);
+    note(x, 36, 127); Stat cF = run_from(x, 700, 100);    /* 2.03..2.32 s */
+    CHECK(cF.rms < 1e-5, "nothing at 2 s: clamped, not 8 s (%.6f)", cF.rms);
+    sp(x, "delay_l_sync", 0); sp(x, "delay_r_sync", 0);
     /* leave the delay off (exact bypass) for every later block */
     sp(x, "delay_detune", 64); sp(x, "delay_l", 64); sp(x, "delay_r", 64); sp(x, "delay_fb", 64);
     sp(x, "delay_wet", 0); sp(x, "voice", 0); sp(x, "osc_decay", 127);

@@ -273,7 +273,14 @@ static int get_param(void *p, const char *k, char *buf, int n)
                     return put(buf, n, t);
                 }
                 if (j == P_DELAY_L || j == P_DELAY_R) {
-                    /* the delay times: 1..1000 ms, the same log knob mapping the voice uses */
+                    /* the delay times: a synced side shows its division (same quantize as
+                     * sd_voice_render's dly_*_step — keep in sync), a free side 1..1000 ms on the
+                     * same log knob mapping the voice uses */
+                    const int dsk = j == P_DELAY_L ? P_DELAY_L_SYNC : P_DELAY_R_SYNC;
+                    if (s->v[s->sel].p[P2E[dsk]] != 0.0f) {
+                        const int st = (int)(v * 17.0f / 127.0f + 0.5f);
+                        return put(buf, n, SD_DIV_WORDS[st]);
+                    }
                     snprintf(t, sizeof t, "%.0f ms", powf(1000.0f, v * (1.0f / 127.0f)));
                     return put(buf, n, t);
                 }

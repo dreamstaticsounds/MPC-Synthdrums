@@ -379,8 +379,21 @@ void sd_voice_render(Voice *v, float *bus, int frames, float bpm)
      * mapping lives here, the module takes milliseconds), the detune (0..1 -> the vendor's +-2.5%
      * quadratic taper), the feedback (capped at 0.95, the spec's runaway-tail clamp) and the mix
      * (0 = the module is skipped entirely: exact bypass and no CPU). */
-    const float dly_l_ms = powf(1000.0f, PP(P_DELAY_L) * (1.0f / 127.0f));
-    const float dly_r_ms = powf(1000.0f, PP(P_DELAY_R) * (1.0f / 127.0f));
+    /* Per-side delay time (1.0.2): a synced side quantizes its knob to the shared division grid
+     * (18 steps, 4 bars .. 1/32 trip; the switch is the off) and follows the BPM; a free side keeps
+     * 1.0.1's log law verbatim. Either way it clamps to the line's cap: the horizon math below must
+     * never see 8000 ms for a synced "4 bars" (design section 8). The quantize expression is
+     * duplicated in synth.c's display branch: keep the two in sync. */
+    const int dly_l_step = (int)(PP(P_DELAY_L) * 17.0f / 127.0f + 0.5f);
+    const int dly_r_step = (int)(PP(P_DELAY_R) * 17.0f / 127.0f + 0.5f);
+    float dly_l_ms = PP(P_DELAY_L_SYNC) > 0.5f
+                     ? SD_DIV_BEATS[dly_l_step] * 60000.0f / bpm
+                     : powf(1000.0f, PP(P_DELAY_L) * (1.0f / 127.0f));
+    float dly_r_ms = PP(P_DELAY_R_SYNC) > 0.5f
+                     ? SD_DIV_BEATS[dly_r_step] * 60000.0f / bpm
+                     : powf(1000.0f, PP(P_DELAY_R) * (1.0f / 127.0f));
+    if (dly_l_ms > 1000.0f) dly_l_ms = 1000.0f;
+    if (dly_r_ms > 1000.0f) dly_r_ms = 1000.0f;
     const float dly_det = PP(P_DELAY_DETUNE) * (1.0f / 127.0f);
     const float dly_fb = PP(P_DELAY_FB) * (0.95f / 127.0f);
     const float dly_wet = PP(P_DELAY_WET) * (1.0f / 127.0f);
