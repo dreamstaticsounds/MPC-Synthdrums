@@ -80,6 +80,7 @@ typedef struct {
     float nenv;             /* the noise amp envelope's level */
     float t_penv;           /* the envelopes' ages, in seconds */
     float t_nenv;
+    float t_amp;            /* the osc amp env's age: its hold/release law needs the clock, not just a coef */
     float brown;            /* the noise colour's leaky integrator */
     uint32_t lfsr;          /* the noise LFSR (re-seeded at every trigger) */
     Filt filt;              /* the oscillator branch's filter: coefficients, delay line, filter env */

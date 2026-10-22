@@ -327,19 +327,49 @@ int main(void)
     note(x, 36, 10);  quiet = run(x, 40);
     CHECK(loud.rms > quiet.rms * 0.95 && loud.rms < quiet.rms * 1.05, "vel_to_vol=0 flattens velocity (%.4f vs %.4f)", loud.rms, quiet.rms);
     sp(x, "vel_to_vol", 127);
-    /* pitch sweep: amount up → starts high, settles back down */
+    /* pitch sweep: amount up → starts high, settles back down (shape 0: decay from the first sample;
+     * the default shape now holds the pitch for ~3.6 tau, which this window-based test doesn't want) */
     sp(x, "src_mix", 0); sp(x, "penv_amount", 60); sp(x, "penv_decay", 100); sp(x, "osc_decay", 127);
-    sp(x, "trig", 1); int early = zc(x, 10); int late = zc_after(x, 400, 10);
+    sp(x, "penv_shape", 0); sp(x, "trig", 1); int early = zc(x, 10); int late = zc_after(x, 400, 10);
     CHECK(early > late * 2, "pitch env sweeps down (%d vs %d)", early, late);
-    sp(x, "penv_amount", 0); sp(x, "penv_decay", 64);
-    /* shape and x-mod change the waveform exactly (same params → bit-identical capture) */
+    sp(x, "penv_amount", 0); sp(x, "penv_decay", 64); sp(x, "penv_shape", 64);
+    /* shape and x-mod change the sound exactly (same params → bit-identical capture). osc_shape shapes the
+     * amp env now, so a short decay makes the hold visible inside the first block's capture. */
     static float A[128*128], B[128*128];
+    sp(x, "osc_decay", 30);
     sp(x, "osc_shape", 0); sp(x, "osc_xmod", 0); sp(x, "trig", 1); cap(x, A, 100);
     sp(x, "osc_shape", 127); sp(x, "trig", 1); cap(x, B, 100);
-    CHECK(capdiff(A, B, 128*100) > 1e-3, "osc_shape changes the wave");
+    CHECK(capdiff(A, B, 128*100) > 1e-3, "osc_shape changes the voice");
     sp(x, "osc_shape", 0); sp(x, "osc_xmod", 127); sp(x, "trig", 1); cap(x, B, 100);
     CHECK(capdiff(A, B, 128*100) > 1e-3, "x-mod adds modulation");
-    sp(x, "osc_xmod", 0);
+    sp(x, "osc_xmod", 0); sp(x, "osc_decay", 127);
+    /* ---- Task 5: the shape knobs hold the level at full, then release exponentially to zero ---- */
+    sp(x, "src_mix", 0); sp(x, "penv_amount", 0);
+    sp(x, "osc_decay", 30);                       /* tau ~12 ms: T ~108 ms, hold(127) ~87 ms, tail ~2.4 ms */
+    sp(x, "osc_shape", 0); note(x, 36, 127);
+    float w0[12], w1[12];
+    run_windows(x, 12, 4, w0);                    /* 12 windows of 4 blocks: ~11.6 ms each, ~139 ms total */
+    CHECK(w0[3] < 0.5f * w0[0], "shape 0 decays immediately (%.4f vs %.4f)", w0[3], w0[0]);
+    sp(x, "osc_shape", 127); note(x, 36, 127);
+    run_windows(x, 12, 4, w1);
+    CHECK(w1[3] > 0.9f * w1[0], "shape 127 holds the level (%.4f vs %.4f)", w1[3], w1[0]);
+    CHECK(w1[9] < w1[5] * 0.3f, "then the tail falls off (%.4f vs %.4f)", w1[9], w1[5]);
+    Stat sh_tail = run_from(x, 6, 54);            /* past t = T: the envelope reaches exact zero */
+    CHECK(sh_tail.peak < 300, "the envelope reaches zero (%d)", sh_tail.peak);
+    /* the pitch env uses the same law: at shape 127 the sweep holds at full depth, then settles */
+    sp(x, "osc_decay", 127); sp(x, "osc_shape", 0);
+    sp(x, "penv_amount", 60); sp(x, "penv_decay", 64); sp(x, "penv_shape", 127);
+    sp(x, "trig", 1); int ph_early = zc(x, 3);    /* in the hold: pitch still way up */
+    int ph_late = zc_after(x, 90, 3);             /* past T ~0.5 s: the pitch has settled */
+    CHECK(ph_early > ph_late * 2, "pitch env holds at full depth (%d vs %d)", ph_early, ph_late);
+    /* all three shape knobs still change the sound (the pitch env via its zc hold above) */
+    sp(x, "penv_amount", 0); sp(x, "penv_shape", 64);
+    sp(x, "src_mix", 127); sp(x, "noise_decay", 64);
+    float wn0[8], wn1[8];
+    sp(x, "noise_shape", 0); sp(x, "trig", 1); run_windows(x, 8, 20, wn0);   /* 58 ms windows, ~464 ms */
+    sp(x, "noise_shape", 127); sp(x, "trig", 1); run_windows(x, 8, 20, wn1);
+    CHECK(wn1[6] > wn0[6] * 3, "noise_shape changes the decay (%.4f vs %.4f)", wn1[6], wn0[6]);
+    sp(x, "noise_shape", 64); sp(x, "src_mix", 0);
     /* noise path */
     sp(x, "src_mix", 127); sp(x, "noise_decay", 100); sp(x, "trig", 1); s = run(x, 150);
     CHECK(s.rms > 0.005 && s.nan == 0, "noise source alone sounds");

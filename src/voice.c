@@ -4,11 +4,11 @@
  *
  * The mappings (one line each, the brief's):
  *  - the oscillator's key is base_note + the voice's index: f = 440*2^((key + pitch + pitch_env - 69)/12)
- *  - the osc amp env: osc_decay 0..127 = ~2 ms..~4 s, exponential, coefficient exp(-1/(sr*t)), one-shot
- *  - osc_shape: the sine's phase is warped, sinf(2*pi*phi^k), k from 1 (pure sine) to 0.35 (curved ramp)
+ *  - the osc amp env: osc_decay 0..127 = ~2 ms..~4 s, osc_shape holds the level at full for 0.8*g*T then
+ *    releases exponentially, exactly 0 at T = 9*tau (g = shape/127; at g = 0 it is 1.0.0's pure exp)
  *  - osc_xmod: the noise modulates the phase increment, an FM index of xmod/127*3 rad
- *  - the pitch env: the depth is penv_amount*(48/63) semitones, penv_attack ramps it 0->full, penv_decay
- *    brings it back to 0 exponentially, penv_shape blends the curve from exponential to linear
+ *  - the pitch env: the depth is penv_amount*(48/63) semitones, penv_attack ramps it 0->full, penv_decay's
+ *    stage holds then releases per penv_shape (the same hold-then-release law as the amp env)
  *  - pitch_track: the played octave above the voice's own key, scaled by track/127, in semitones
  *  - the noise: a white LFSR -> the colour's tilt -> its own amp env -> its own biquad -> the osc/noise mix
  *  - the filters: each branch (osc, noise) has its own resonant 12 dB/oct biquad (LP/BP/HP) and its own
@@ -68,25 +68,32 @@ static float knob_attack(float v, float hi)
     return 0.001f * powf(hi / 0.001f, (v - 1.0f) * (1.0f / 126.0f));
 }
 
-/* penv_shape / noise_shape: 0 = snappy (exponential), 127 = linear. The two curves are blended by the shape. */
+/* penv_shape / noise_shape on the attack stage: 0 = snappy (exponential), 127 = a plain ramp. */
 static float env_attack(float t, float ta, float g)
 {
     const float u = ta > 0.0f && t < ta ? t / ta : 1.0f;
     return powf(u, 1.0f + 3.0f * (1.0f - g));   /* g = 1: a plain ramp, g = 0: a snappy one */
 }
 
-static float env_decay(float t, float tau, float g)
+/* The decay stage (penv_shape / noise_shape / osc_shape): hold-then-release, per the shape curve spec
+ * figure. g = shape/127; T = 9*tau (the time the 1.0.0 exponential took to reach its floor); hold =
+ * 0.8*g*T: the level is exactly 1 while t < hold, then releases exponentially with tau' = (T - hold)/9
+ * (landing at e^-9 ~ 1e-4 at t = T), and is exactly 0 at t >= T -- the voice must reach silence.
+ * At g = 0 the hold is 0 and tau' is tau: the per-sample law is 1.0.0's exponential, bit for bit. */
+static float env_release(float t, float tau, float g)
 {
-    const float e = expf(-t / tau);
-    const float l = t < 3.0f * tau ? 1.0f - t / (3.0f * tau) : 0.0f;
-    return (1.0f - g) * e + g * l;
+    const float T = 9.0f * tau, hold = 0.8f * g * T;
+    if (t >= T) return 0.0f;
+    if (t <= hold) return 1.0f;
+    /* At hold = 0 (g = 0) the tail's tau is tau itself, not (T - 0)/9 recomputed: bit-identical 1.0.0. */
+    return expf(-(t - hold) / (hold > 0.0f ? (T - hold) * (1.0f / 9.0f) : tau));
 }
 
-/* The envelope: the attack ramps the depth 0 -> full, the decay brings it back to 0. */
+/* The envelope: the attack ramps the depth 0 -> full, the decay holds then releases it to 0. */
 static float env_level(float t, float ta, float tau, float g)
 {
     if (t < ta) return env_attack(t, ta, g);
-    return env_decay(t - ta, tau, g);
+    return env_release(t - ta, tau, g);
 }
 
 /* The white noise: the LFSR's top 16 bits as a signed sample in [-1, 1). */
@@ -106,6 +113,7 @@ void sd_voice_reset(Voice *v)
     v->vel_penv = 0.0f;
     v->phase = 0.0f;
     v->amp = 0.0f;
+    v->t_amp = 0.0f;
     v->penv = 0.0f;
     v->nenv = 0.0f;
     v->t_penv = 0.0f;
@@ -159,6 +167,7 @@ void sd_voice_note(Voice *v, float vel)
     v->vel_noise = vel_xfade(VP(v, P_VEL_TO_NOISE), vel);
     v->vel_penv = vel_xfade(VP(v, P_VEL_TO_PENV), vel);
     v->amp = 1.0f;        /* the osc amp env starts at full: a drum hits hard */
+    v->t_amp = 0.0f;
     v->nenv = 1.0f;       /* the noise env starts at full (its attack ramps it from 0) */
     v->sounding = 1;
 }
@@ -169,13 +178,17 @@ void sd_voice_render(Voice *v, float *bus, int frames)
     const float mix = VP(v, P_SRC_MIX) * (1.0f / 127.0f);
     const float osc_gain = (1.0f - mix) * v->vel_osc;
     const float noise_gain = mix * v->vel_noise;
-    const float shape = VP(v, P_OSC_SHAPE) * (1.0f / 127.0f);
-    const float warp = 1.0f - 0.65f * shape;                     /* the phase warp's exponent: 1 = sine, 0.35 = ramp */
     const float fm = (VP(v, P_OSC_XMOD) * (1.0f / 127.0f)) * 3.0f;   /* the x-mod's FM index, in radians */
     const float penv_amt = VP(v, P_PENV_AMOUNT) * (48.0f / 63.0f);   /* the pitch env's depth, in semitones */
     const float a_col = 0.02f + 0.98f * (VP(v, P_NOISE_COLOUR) * (1.0f / 127.0f));   /* the colour's tilt */
+    /* The osc amp env (the osc_shape knob's job since 1.0.1: the shape holds the level at full, then
+     * releases). tau_tail is tau_amp itself when the hold is 0, so at shape 0 coef_tail equals 1.0.0's
+     * coef_amp bit for bit. */
     const float tau_amp = knob_time(VP(v, P_OSC_DECAY), 0.002f, 4.0f);
-    const float coef_amp = expf(-1.0f / (SD_SR * tau_amp));       /* the osc amp env's coefficient */
+    const float g_amp = VP(v, P_OSC_SHAPE) * (1.0f / 127.0f);
+    const float T_amp = 9.0f * tau_amp, hold_amp = 0.8f * g_amp * T_amp;
+    const float tau_tail = (hold_amp > 0.0f) ? (T_amp - hold_amp) * (1.0f / 9.0f) : tau_amp;
+    const float coef_tail = expf(-1.0f / (SD_SR * tau_tail));
     const float tau_n = knob_time(VP(v, P_NOISE_DECAY), 0.002f, 4.0f);
     const float ta_n = knob_attack(VP(v, P_NOISE_ATTACK), 0.3f);
     const float g_n = VP(v, P_NOISE_SHAPE) * (1.0f / 127.0f);
@@ -279,13 +292,18 @@ void sd_voice_render(Voice *v, float *bus, int frames)
          * (up to 3 rad), so the instantaneous frequency is f*(1 + index*noise): the 808's metallic rattle. */
         inc *= 1.0f + fm * w;
 
-        /* The oscillator: the phase runs on, the shape warps it. */
+        /* The oscillator: a plain sine (the shape knob's waveform-warp role moved to the amp env). */
         v->phase += inc;
         v->phase -= floorf(v->phase);
-        osc = (shape == 0.0f) ? sinf(TWO_PI * v->phase) : sinf(TWO_PI * powf(v->phase, warp));
+        osc = sinf(TWO_PI * v->phase);
 
-        /* The osc amp env: exponential, one-shot. */
-        v->amp *= coef_amp;
+        /* The osc amp env: hold at full for the shape's hold, then release exponentially, and reach
+         * exactly zero at T (the voice must fall silent). At shape 0 this is one multiply, exactly
+         * 1.0.0's coef_amp update. */
+        v->t_amp += DT;
+        if (v->t_amp >= T_amp) v->amp = 0.0f;
+        else if (v->t_amp >= hold_amp) v->amp *= coef_tail;
+        else v->amp = 1.0f;
 
         /* The noise: the colour's leaky integrator, then the amp envelope, then its own filter. */
         v->brown += a_col * (w - v->brown);
