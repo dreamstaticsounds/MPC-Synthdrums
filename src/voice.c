@@ -466,10 +466,12 @@ void sd_voice_render(Voice *v, float *bus, int frames, float bpm)
         out = eq_step(&v->eq[1], out);
         out = eq_step(&v->eq[2], out);
 
-        /* The FX row: ring mod, operator FM, comb, gated reverb — each exact bypass at 0. The reverb's
+        /* The FX row: ring mod, operator FM, comb, gated reverb — each exact bypass at 0. The FM
+         * operator is gated by the osc amp env (g * v->amp): it dies with the envelope, so a hit that
+         * has run out leaves no 150 Hz drone behind (1.0.2). The reverb's
          * gate is per-hit: its age advances here and starts at 0 with every trigger. */
         out = fx_ring(&v->ring, out, ring_hz, ring_wet);
-        out = fx_fm(&v->fm, out, fm_idx, fm_g);
+        out = fx_fm(&v->fm, out, fm_idx, fm_g * v->amp);
         out = fx_comb(&v->comb, out, comb_ms, 0.75f, comb01);
         v->gverb_t += DT;
         out = fx_gverb(&v->gv, out, gverb_m, v->gverb_t);

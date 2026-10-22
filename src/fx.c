@@ -3,7 +3,7 @@
  *
  * They sit between the voice's filters and its pan, in chain order:
  *
- *   sources -> filters -> stutter -> dist -> EQ x3 -> ring -> FM -> comb -> gated reverb -> vol/pan
+ *   sources -> filters -> stutter -> dist -> EQ x3 -> ring -> FM (gated by the osc amp env) -> comb -> gated reverb -> vol/pan
  *
  * Stutter: a square gate whose rate the "length" knob sets (0.5 .. 40 Hz, an exponential sweep: the
  * roll/echo-machine feel) and whose depth the "strength" knob sets (0 = off, exactly; 1 = the gate
@@ -128,7 +128,8 @@ float fx_ring(RingSt *r, float x, float hz, float g)
 }
 
 /* Operator FM: a 150 Hz operator modulated by the voice itself, blended in: y = x + g*sin(2*pi*ph + I*x).
- * g == 0 is exact bypass (the operator restarts at the next engage). */
+ * g == 0 is exact bypass (the operator restarts at the next engage). The caller scales g by the voice's
+ * osc amp env, so the operator dies with the envelope (1.0.2: no drone after the env ends). */
 float fx_fm(FmSt *f, float x, float idx, float g)
 {
     float y;

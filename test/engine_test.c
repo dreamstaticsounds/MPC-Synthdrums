@@ -513,6 +513,16 @@ int main(void)
           buf_rms(B, 128), buf_rms(A, 128));
     sp(x, "ring_mod", 0); sp(x, "fm_index", 127); note(x, 36, 127); cap(x, B, 128);
     CHECK(capdiff(A, B, 128) > 1e-3, "fm engages");
+    /* FM: the operator dies with the osc env (1.0.2: no 150 Hz drone after the env ends). */
+    sp(x, "src_mix", 127);        /* osc_gain = 0: noise only, so the voice stays alive */
+    sp(x, "noise_decay", 100);    /* ~6.8 s: keeps sounding */
+    sp(x, "osc_decay", 0);        /* ~18 ms T: amp reaches 0 almost at once */
+    sp(x, "fm_index", 127);
+    note(x, 36, 127); Stat f1 = run_from(x, 10, 20);   /* after the osc env died */
+    sp(x, "fm_index", 0);
+    note(x, 36, 127); Stat f2 = run_from(x, 10, 20);
+    CHECK(f1.rms < f2.rms * 1.3, "FM silent after the osc env ends (%.4f vs %.4f)", f1.rms, f2.rms);
+    sp(x, "src_mix", 0); sp(x, "noise_decay", 0); sp(x, "osc_decay", 0); sp(x, "fm_index", 0);
     sp(x, "fm_index", 0); sp(x, "comb", 127); note(x, 36, 127); cap(x, B, 128);
     CHECK(capdiff(A, B, 128) > 1e-3, "comb engages");
     /* the gate closes the tail: full wet + a sustained input — the tail must die when the gate shuts
