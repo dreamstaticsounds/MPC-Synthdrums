@@ -48,6 +48,9 @@ enum {
     P_VOICE_NEXT,
     P_KIT_INIT,
     P_VOICE_NAME,
+    P_VOICE_COPY,
+    P_VOICE_PASTE,
+    P_VOICE_INIT,
     P_COUNT
 };
 
@@ -94,6 +97,9 @@ static const short P2E[P_COUNT] = {
     32,
     33,
     34,
+    -1,
+    -1,
+    -1,
     -1,
     -1,
     -1,
@@ -186,6 +192,9 @@ static const ParamDef PDEF[P_COUNT] = {
     {"voice_next", PK_TRIG, 0, 1, 0, 0},
     {"kit_init", PK_TRIG, 0, 1, 0, 0},
     {"voice_name", PK_SHOW, 0, 0, 0, 0},
+    {"voice_copy", PK_TRIG, 0, 1, 0, 0},
+    {"voice_paste", PK_TRIG, 0, 1, 0, 0},
+    {"voice_init", PK_TRIG, 0, 1, 0, 0},
 };
 
 #define N_FILTER_MODE 3

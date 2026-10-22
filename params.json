@@ -367,6 +367,30 @@
    "min": 0,
    "max": 0,
    "display": "string"
+  },
+  {
+   "key": "voice_copy",
+   "name": "COPY VOICE",
+   "default": 0,
+   "min": 0,
+   "max": 1,
+   "momentary": true
+  },
+  {
+   "key": "voice_paste",
+   "name": "PASTE VOICE",
+   "default": 0,
+   "min": 0,
+   "max": 1,
+   "momentary": true
+  },
+  {
+   "key": "voice_init",
+   "name": "INIT VOICE",
+   "default": 0,
+   "min": 0,
+   "max": 1,
+   "momentary": true
   }
  ]
 }

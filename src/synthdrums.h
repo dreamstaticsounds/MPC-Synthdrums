@@ -98,6 +98,8 @@ typedef struct {
     int base_note;          /* MIDI note that plays v[0]; the other voices fold by 12 (device-level: survives KIT INIT) */
     unsigned rev;           /* display_rev: bumped when the engine changes values by itself */
     unsigned nan_count;     /* the samples the master bus had to silence (not finite): the test watches this */
+    float clip[EDIT_PARAMS];/* voice_copy's snapshot of the selected voice (session-only: never serialized) */
+    int have_clip;          /* the clipboard holds a voice */
 } Synth;
 
 extern const float INIT_PATCH[EDIT_PARAMS];   /* PDEF's defaults in P_ order */

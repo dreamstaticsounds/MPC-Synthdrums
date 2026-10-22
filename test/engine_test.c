@@ -275,6 +275,27 @@ int main(void)
         CHECK(run(x, 2).rms > 1e-4, "the folded hit sounds");
         E->set_param(x, "voice", "0");           /* selection back for the tests below */
     }
+    /* Task 3: copy/paste/init the selected voice */
+    {
+        char st[8192];
+        E->get_param(x, "state", st, sizeof st);
+        E->set_param(x, "voice", "0"); sp(x, "osc_decay", 42); sp(x, "voice_copy", 1);
+        E->set_param(x, "voice", "1"); sp(x, "osc_decay", 99); sp(x, "voice_paste", 1);
+        E->get_param(x, "osc_decay", b, sizeof b); CHECK(!strcmp(b, "42"), "paste restores the copied voice");
+        E->set_param(x, "voice", "0"); E->get_param(x, "osc_decay", b, sizeof b);
+        CHECK(!strcmp(b, "42"), "copy touched no other voice");
+        sp(x, "voice_init", 1);
+        E->get_param(x, "osc_decay", b, sizeof b); CHECK(!strcmp(b, "64"), "init voice resets to INIT_PATCH");
+        E->set_param(x, "voice", "1"); E->get_param(x, "osc_decay", b, sizeof b);
+        CHECK(!strcmp(b, "42"), "init voice leaves the others alone");
+        /* the clipboard is not in the chunk */
+        E->set_param(x, "voice", "0"); sp(x, "voice_copy", 1);
+        { char s1[8192], s2[8192];
+          sp(x, "osc_decay", 77); E->get_param(x, "state", s1, sizeof s1);
+          sp(x, "voice_copy", 1); E->get_param(x, "state", s2, sizeof s2);
+          CHECK(!strcmp(s1, s2), "copy does not change the state chunk"); }
+        E->set_param(x, "state", st);   /* restore */
+    }
     /* display_rev bumps on voice switch, not on plain edits */
     E->get_param(x, "display_rev", a, sizeof a); sp(x, "voice", 5);
     E->get_param(x, "display_rev", c, sizeof c); CHECK(strcmp(a, c), "display_rev bumps on voice switch");

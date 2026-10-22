@@ -104,6 +104,10 @@ PARAMS = [
     P("kit_init", "KIT INIT", kind="PK_TRIG", momentary=True),
     # the readout
     P("voice_name", "VOICE NAME", 0, 0, 0, kind="PK_SHOW", display="string"),
+    # the voice clipboard (Task 3): snapshots/pastes/resets the selected voice
+    P("voice_copy", "COPY VOICE", kind="PK_TRIG", momentary=True),
+    P("voice_paste", "PASTE VOICE", kind="PK_TRIG", momentary=True),
+    P("voice_init", "INIT VOICE", kind="PK_TRIG", momentary=True),
 ]
 
 for p in PARAMS:   # momentary keys: a plain 0..1 with no int display

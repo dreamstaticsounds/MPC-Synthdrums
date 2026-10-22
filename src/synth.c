@@ -177,6 +177,12 @@ static void set_param(void *p, const char *k, const char *val)
                 }
             } else if (i == P_KIT_INIT) {
                 if (f > 0.5f) { patch_init_kit(s); s->rev++; }
+            } else if (i == P_VOICE_COPY) {
+                if (f > 0.5f) { memcpy(s->clip, s->v[s->sel].p, sizeof s->clip); s->have_clip = 1; }
+            } else if (i == P_VOICE_PASTE) {
+                if (f > 0.5f && s->have_clip) { memcpy(s->v[s->sel].p, s->clip, sizeof s->clip); s->rev++; }
+            } else if (i == P_VOICE_INIT) {
+                if (f > 0.5f) { patch_init_voice(&s->v[s->sel]); s->rev++; }
             }
             /* voice_prev/voice_next never reach the engine: the wrapper steps "voice" itself (step_of) */
             break;
