@@ -9,3 +9,6 @@ mkdir -p build/host
 gcc -O1 -g -std=gnu11 -fsanitize=address,undefined -fno-omit-frame-pointer -Isrc -Ithird_party/mpc-vst-plugins/wrapper \
   $SRCS test/engine_test.c -lm -o build/host/engine_test
 build/host/engine_test
+gcc -O1 -g -std=gnu11 -ffp-contract=off -fsanitize=address,undefined -fno-omit-frame-pointer \
+  -Isrc -Ithird_party/mpc-vst-plugins/wrapper $SRCS test/golden_test.c -lm -o build/host/golden_test
+build/host/golden_test test/goldens/fx-sound.txt
