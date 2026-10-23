@@ -134,7 +134,8 @@ PARAMS = [
     P("delay_detune", "DELAY DETUNE", 0, 127, 64, dynamic_display=True),
     P("delay_l", "DELAY L", 0, 127, 64, dynamic_display=True),
     P("delay_r", "DELAY R", 0, 127, 64, dynamic_display=True),
-    P("delay_fb", "DELAY FB", 0, 127, 64),
+    P("delay_fb", "DELAY FB", 0, 127, 64),   # 0..127, effective 0..0.95 -- RETIRED 1.0.3: read by
+    # nothing (kept for append-only compat; the sound moved to delay_l_fb / delay_r_fb)
     P("delay_wet", "DELAY WET", 0, 127, 0),
 ]
 
@@ -165,6 +166,22 @@ PARAMS += [
     P("width", "WIDTH", 0, 127, 0),
     P("delay_l_sync", "DELAY L SYNC", d=0, opts=["OFF", "ON"]),
     P("delay_r_sync", "DELAY R SYNC", d=0, opts=["OFF", "ON"]),
+]
+
+# 1.0.3 (design sections 2, 3, 4, 6): appended, append-only rule. fx_reset is a PK_TRIG momentary
+# exactly like kit_init (the wrapper springs it back; the engine keeps it out of p[] and the chunk).
+# The delay fb knobs default 64 (= the retired delay_fb 64); the verb length defaults 0 (= the
+# 1.0.2 baked one-tap verb) and reads as its tap count (dynamic_display, engine branch in Task 5);
+# the three mixes default 127 = pure wet = the 1.0.2 engaged sound. The six continuous ones join
+# the LFO dest list at its end (existing dest indices stay stable).
+PARAMS += [
+    P("delay_l_fb", "DELAY L FB", 0, 127, 64),
+    P("delay_r_fb", "DELAY R FB", 0, 127, 64),
+    P("fx_reset", "FX RESET", kind="PK_TRIG", momentary=True),
+    P("gverb_length", "GVERB LENGTH", 0, 127, 0, dynamic_display=True),
+    P("ring_mix", "RING MIX", 0, 127, 127),
+    P("fm_mix", "FM MIX", 0, 127, 127),
+    P("comb_mix", "COMB MIX", 0, 127, 127),
 ]
 
 # The LFO destinations (DEST): every continuous voice parameter (PK_PATCH without options -- the enums

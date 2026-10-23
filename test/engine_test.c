@@ -270,6 +270,14 @@ int main(void)
     CHECK(E->get_param(x, "delay_l_sync", b, sizeof b) > 0 && !strcmp(b, "0"), "init delay_l_sync");
     CHECK(E->get_param(x, "delay_r_sync", b, sizeof b) > 0 && !strcmp(b, "0"), "init delay_r_sync");
     CHECK(E->get_param(x, "stutter_length", b, sizeof b) > 0 && !strcmp(b, "64"), "init stutter_length");
+    /* 1.0.3 defaults: the seven appended params (Task 2). fx_reset is a momentary: it reads 0. */
+    CHECK(E->get_param(x, "delay_l_fb", b, sizeof b) > 0 && !strcmp(b, "64"), "init delay_l_fb");
+    CHECK(E->get_param(x, "delay_r_fb", b, sizeof b) > 0 && !strcmp(b, "64"), "init delay_r_fb");
+    CHECK(E->get_param(x, "fx_reset", b, sizeof b) > 0 && !strcmp(b, "0"), "init fx_reset");
+    CHECK(E->get_param(x, "gverb_length", b, sizeof b) > 0 && !strcmp(b, "0"), "init gverb_length");
+    CHECK(E->get_param(x, "ring_mix", b, sizeof b) > 0 && !strcmp(b, "127"), "init ring_mix");
+    CHECK(E->get_param(x, "fm_mix", b, sizeof b) > 0 && !strcmp(b, "127"), "init fm_mix");
+    CHECK(E->get_param(x, "comb_mix", b, sizeof b) > 0 && !strcmp(b, "127"), "init comb_mix");
     /* mirroring: edits land on the selected voice only (indices, not display numbers) */
     sp(x, "voice", 3); sp(x, "osc_decay", 42);
     sp(x, "voice", 1);

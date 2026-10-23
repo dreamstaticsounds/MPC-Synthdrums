@@ -698,10 +698,16 @@
     "LFO3 RATE",
     "LFO3 DEPTH",
     "DIST TONE",
-    "WIDTH"
+    "WIDTH",
+    "DELAY L FB",
+    "DELAY R FB",
+    "GVERB LENGTH",
+    "RING MIX",
+    "FM MIX",
+    "COMB MIX"
    ],
    "min": 0,
-   "max": 58
+   "max": 64
   },
   {
    "key": "lfo1_depth",
@@ -842,10 +848,16 @@
     "LFO3 RATE",
     "LFO3 DEPTH",
     "DIST TONE",
-    "WIDTH"
+    "WIDTH",
+    "DELAY L FB",
+    "DELAY R FB",
+    "GVERB LENGTH",
+    "RING MIX",
+    "FM MIX",
+    "COMB MIX"
    ],
    "min": 0,
-   "max": 58
+   "max": 64
   },
   {
    "key": "lfo2_depth",
@@ -986,10 +998,16 @@
     "LFO3 RATE",
     "LFO3 DEPTH",
     "DIST TONE",
-    "WIDTH"
+    "WIDTH",
+    "DELAY L FB",
+    "DELAY R FB",
+    "GVERB LENGTH",
+    "RING MIX",
+    "FM MIX",
+    "COMB MIX"
    ],
    "min": 0,
-   "max": 58
+   "max": 64
   },
   {
    "key": "lfo3_depth",
@@ -1036,6 +1054,63 @@
    ],
    "min": 0,
    "max": 1
+  },
+  {
+   "key": "delay_l_fb",
+   "name": "DELAY L FB",
+   "default": 64,
+   "min": 0,
+   "max": 127,
+   "display": "int"
+  },
+  {
+   "key": "delay_r_fb",
+   "name": "DELAY R FB",
+   "default": 64,
+   "min": 0,
+   "max": 127,
+   "display": "int"
+  },
+  {
+   "key": "fx_reset",
+   "name": "FX RESET",
+   "default": 0,
+   "min": 0,
+   "max": 1,
+   "momentary": true
+  },
+  {
+   "key": "gverb_length",
+   "name": "GVERB LENGTH",
+   "default": 0,
+   "min": 0,
+   "max": 127,
+   "display": "int",
+   "dynamic_display": true
+  },
+  {
+   "key": "ring_mix",
+   "name": "RING MIX",
+   "default": 127,
+   "min": 0,
+   "max": 127,
+   "display": "int"
+  },
+  {
+   "key": "fm_mix",
+   "name": "FM MIX",
+   "default": 127,
+   "min": 0,
+   "max": 127,
+   "display": "int"
+  },
+  {
+   "key": "comb_mix",
+   "name": "COMB MIX",
+   "default": 127,
+   "min": 0,
+   "max": 127,
+   "display": "int"
   }
  ]
 }
