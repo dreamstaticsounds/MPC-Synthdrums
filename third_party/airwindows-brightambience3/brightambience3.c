@@ -58,8 +58,10 @@ void verb_step(VerbSt *v, float inl, float inr, float wet, float *ol, float *orr
     tr = v->r[v->wr];
     v->l[v->wl] = inl;
     v->r[v->wr] = inr;
-    v->wl = (v->wl + 1) % BA3_TAP_L;
-    v->wr = (v->wr + 1) % BA3_TAP_R;
+    /* the wrap is a compare, not a modulo: same index sequence (bit-identical), no per-sample
+     * integer division on the audio thread (1.0.2 bench: the % showed up in the worst blocks) */
+    if (++v->wl == BA3_TAP_L) v->wl = 0;
+    if (++v->wr == BA3_TAP_R) v->wr = 0;
 
     /* the figure: the vendor's 2-pole update, per channel (transposed direct form; the vendor
      * carries the state in double, this port in float to match the engine's state width) */
