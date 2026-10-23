@@ -196,6 +196,22 @@ static void set_param(void *p, const char *k, const char *val)
                 }
             } else if (i == P_KIT_INIT) {
                 if (f > 0.5f) { patch_init_kit(s); s->rev++; }
+            } else if (i == P_FX_RESET) {
+                /* 1.0.3: one key restores the FX chain (design §3) -- the 19 named params on the
+                 * selected voice only; no readback of its own: rev++ makes the wrapper's display_rev
+                 * diff (vst2_wrap.c housekeeping) automate every changed param to the host */
+                if (f > 0.5f) {
+                    static const char *const fxk[] = { "dist_drive", "dist_tone", "ring_mod",
+                        "ring_mix", "fm_index", "fm_mix", "comb", "comb_mix", "gverb",
+                        "gverb_length", "delay_detune", "delay_l", "delay_r", "delay_l_fb",
+                        "delay_r_fb", "delay_wet", "delay_l_sync", "delay_r_sync", "width" };
+                    int k;
+                    for (k = 0; k < (int)(sizeof fxk / sizeof *fxk); k++) {
+                        const int j = key_index(fxk[k]);
+                        s->v[s->sel].p[P2E[j]] = PDEF[j].def;
+                    }
+                    s->rev++;
+                }
             } else if (i == P_VOICE_COPY) {
                 if (f > 0.5f) { memcpy(s->clip, s->v[s->sel].p, sizeof s->clip); s->have_clip = 1; }
             } else if (i == P_VOICE_PASTE) {

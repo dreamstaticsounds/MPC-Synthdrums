@@ -266,6 +266,51 @@ static void program_tests(AEffect *a) {
 #endif
 }
 
+/* 1.0.3: FX RESET (design §3). One momentary snaps the SELECTED voice's 19 FX params to defaults;
+ * the wrapper's display_rev diff (housekeeping) automates each changed one to the host; the key
+ * springs back to 0 and is absent from the state chunk (a PK_TRIG: the engine keeps it out of p[]). */
+static void fx_reset_tests(AEffect *a)
+{
+    static const char *fxk[] = { "dist_drive", "dist_tone", "ring_mod", "ring_mix", "fm_index",
+        "fm_mix", "comb", "comb_mix", "gverb", "gverb_length", "delay_detune", "delay_l", "delay_r",
+        "delay_l_fb", "delay_r_fb", "delay_wet", "delay_l_sync", "delay_r_sync", "width" };
+    int r = find_param("fx_reset"), v = find_param("voice"), i, nd = (int)(sizeof fxk / sizeof *fxk);
+    CHECK(r >= 0 && v >= 0, "fx_reset and voice are host params");
+    if (r < 0 || v < 0) return;
+    /* all 19 off-default on voice 0; one stray edit on voice 1 */
+    a->setP(a, v, 0.0f); run(a, 1);
+    for (i = 0; i < nd; i++) { int d = find_param(fxk[i]); a->setP(a, d, PARAMS[d].def > 0.5f ? 0.0f : 1.0f); }
+    a->setP(a, v, 1.0f / 11.0f); run(a, 1);
+    a->setP(a, find_param("dist_drive"), 0.5f);
+    a->setP(a, find_param("delay_wet"), 0.25f);
+    a->setP(a, v, 0.0f); run(a, 1);
+    run(a, 40);   /* >= one 4410-frame text poll: the display_rev diff must SEE the off-defaults
+                   * (syncing last_norm to them) before the press, so the reset is a movement the
+                   * wrapper reports. Without it the press restores what last_norm already held. */
+    memset(automated, 0, sizeof automated);
+    a->setP(a, r, 1.0f);                   /* the press */
+    run(a, 60);                            /* 174 ms: covers the 4410-frame display_rev poll */
+    for (i = 0; i < nd; i++) {
+        int d = find_param(fxk[i]);
+        CHECK(fabsf(a->getP(a, d) - PARAMS[d].def) < 1e-4f, "fx_reset: %s back to its default", fxk[i]);
+        CHECK(automated[d] > 0, "fx_reset: the host was told about %s", fxk[i]);
+    }
+    CHECK(a->getP(a, r) < 0.5f, "fx_reset reads back 0 (the momentary spring-back)");
+    a->setP(a, v, 1.0f / 11.0f); run(a, 1);
+    {   /* int-display params snap (0.5 -> 63/127): compare at the chunk test's half-step tolerance */
+        int dd = find_param("dist_drive"), dw = find_param("delay_wet");
+        CHECK(fabsf(a->getP(a, dd) - 0.5f) <= 0.5f / (PARAMS[dd].max - PARAMS[dd].min) + 1e-3f
+              && fabsf(a->getP(a, dw) - 0.25f) <= 0.5f / (PARAMS[dw].max - PARAMS[dw].min) + 1e-3f,
+              "fx_reset leaves the other voice alone (dist_drive %.4f delay_wet %.4f)",
+              a->getP(a, dd), a->getP(a, dw));
+    }
+    a->setP(a, v, 0.0f); run(a, 1);
+    {   /* a trigger is not a patch param: it must not appear in the state chunk */
+        void *ch = 0; intptr_t n = a->d(a, 23, 0, 0, &ch, 0);
+        CHECK(n > 0 && ch && !strstr((char *)ch, "fx_reset"), "fx_reset is absent from the state chunk");
+    }
+}
+
 int main(void) {
     AEffect *a = VSTPluginMain(host), *b = VSTPluginMain(host);
     CHECK(a && b && a != b, "two instances");
@@ -427,6 +472,7 @@ int main(void) {
         if (pop >= 0) CHECK(!strstr((char *)ch, PARAMS[pop].key), "popup flag not saved in the chunk");
     } else printf("warn no chunk (engine has no \"state\" param)\n");
 
+    fx_reset_tests(a);
     program_tests(a);
     cc_tests(a);
     two_thread_tests(a);

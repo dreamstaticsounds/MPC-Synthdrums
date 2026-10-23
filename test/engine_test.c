@@ -968,6 +968,39 @@ CHECK(s.nan == 0 && s.peak <= 32767 && s.peak > 24000, "12-voice sum loud and un
         sp(x, "delay_wet", 64); sp(x, "delay_l", 64); sp(x, "delay_r", 64);   /* leave the delay mid */
     }
 
+    /* ---- 1.0.3 Task 4: FX RESET (design §3) -- 19 keys, selected voice, rev bumps ---- */
+    {
+        static const int fxk[] = { P_DIST_DRIVE, P_DIST_TONE, P_RING_MOD, P_RING_MIX, P_FM_INDEX,
+            P_FM_MIX, P_COMB, P_COMB_MIX, P_GVERB, P_GVERB_LENGTH, P_DELAY_DETUNE, P_DELAY_L,
+            P_DELAY_R, P_DELAY_L_FB, P_DELAY_R_FB, P_DELAY_WET, P_DELAY_L_SYNC, P_DELAY_R_SYNC,
+            P_WIDTH };
+        int k; char r0[32], r1[32];
+        /* prelude: all 19 off their defaults on voice 0; one stray edit on voice 1 */
+        sp(x, "voice", 0);
+        for (k = 0; k < (int)(sizeof fxk / sizeof *fxk); k++) {
+            const ParamDef *p = &PDEF[fxk[k]];
+            sp(x, p->key, p->nopts ? 1 : (p->def > 0 ? 0 : 127));
+        }
+        sp(x, "voice", 1); sp(x, "dist_drive", 77); sp(x, "delay_wet", 33);
+        sp(x, "voice", 0);
+        E->get_param(x, "display_rev", r0, sizeof r0);
+        sp(x, "fx_reset", 1);
+        for (k = 0; k < (int)(sizeof fxk / sizeof *fxk); k++) {
+            char want[32];
+            snprintf(want, sizeof want, "%g", PDEF[fxk[k]].def);
+            E->get_param(x, PDEF[fxk[k]].key, b, sizeof b);
+            CHECK(!strcmp(b, want), "fx_reset: %s -> default %s (got %s)", PDEF[fxk[k]].key, want, b);
+        }
+        E->get_param(x, "display_rev", r1, sizeof r1);
+        CHECK(atoi(r1) == atoi(r0) + 1, "fx_reset bumps display_rev (%s -> %s)", r0, r1);
+        sp(x, "voice", 1);
+        E->get_param(x, "dist_drive", b, sizeof b);
+        CHECK(!strcmp(b, "77"), "fx_reset leaves the other voice (dist_drive %s)", b);
+        E->get_param(x, "delay_wet", b, sizeof b);
+        CHECK(!strcmp(b, "33"), "fx_reset leaves the other voice (delay_wet %s)", b);
+        sp(x, "voice", 0); sp(x, "fx_reset", 0);   /* clean the momentary */
+    }
+
     E->destroy(y);
     E->destroy(x);
     printf(fails ? "FAILED: %d\n" : "PASSED\n", fails);
