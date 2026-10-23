@@ -539,7 +539,7 @@ int main(void)
     /* ---- Task 7: ring mod, operator FM, comb (the FX row) + the gated verb (BA3) ---- */
     /* every module is exact bypass at 0 (direct unit calls on fresh state) */
     {
-        RingSt r; FmSt f; CombSt cb; VerbSt vb;
+        RingSt r; FmSt f; CombSt cb; static VerbSt vb;
         float xc = 0.5f;
         memset(&r, 0, sizeof r); memset(&f, 0, sizeof f); memset(&cb, 0, sizeof cb);
         CHECK(fx_ring(&r, xc, 8000.0f, 0.0f) == xc, "ring bypass at 0");
@@ -550,12 +550,12 @@ int main(void)
             float u_ol = 0.0f, u_orr = 0.0f;
             int i, ar = -1, al = -1;
             verb_reset(&vb);
-            verb_step(&vb, xc, 0.0f, 0.0f, &u_ol, &u_orr);
+            verb_step(&vb, xc, 0.0f, 1, 0.0f, &u_ol, &u_orr);
             CHECK(u_ol == xc && u_orr == 0.0f, "verb bypass at wet 0");
             verb_reset(&vb);
-            verb_step(&vb, 1.0f, 1.0f, 1.0f, &u_ol, &u_orr);    /* the impulse; wet 1 = taps only */
+            verb_step(&vb, 1.0f, 1.0f, 1, 1.0f, &u_ol, &u_orr);    /* the impulse; wet 1 = taps only */
             for (i = 1; i <= BA3_TAP_L + 2; i++) {
-                verb_step(&vb, 0.0f, 0.0f, 1.0f, &u_ol, &u_orr);
+                verb_step(&vb, 0.0f, 0.0f, 1, 1.0f, &u_ol, &u_orr);
                 if (ar < 0 && u_orr != 0.0f) ar = i;
                 if (al < 0 && u_ol != 0.0f) al = i;
             }
@@ -999,6 +999,32 @@ CHECK(s.nan == 0 && s.peak <= 32767 && s.peak > 24000, "12-voice sum loud and un
         E->get_param(x, "delay_wet", b, sizeof b);
         CHECK(!strcmp(b, "33"), "fx_reset leaves the other voice (delay_wet %s)", b);
         sp(x, "voice", 0); sp(x, "fx_reset", 0);   /* clean the momentary */
+    }
+
+    /* ---- 1.0.3 Task 5: the BA3 LENGTH knob (design §4) ---- */
+    {
+        static float A[128*128], B[128*128];
+        /* the readout is the tap count: the vendor's own mapping */
+        sp(x, "gverb_length", 0);   E->get_param(x, "gverb_length_display", b, sizeof b);
+        CHECK(!strcmp(b, "1"), "gverb length 0 shows 1 tap (%s)", b);
+        sp(x, "gverb_length", 64);  E->get_param(x, "gverb_length_display", b, sizeof b);
+        CHECK(!strcmp(b, "124"), "gverb length 64 shows 124 (%s)", b);
+        sp(x, "gverb_length", 127); E->get_param(x, "gverb_length_display", b, sizeof b);
+        CHECK(!strcmp(b, "488"), "gverb length 127 shows 488 (%s)", b);
+        /* per-hit determinism at the max length: two hits bit-identical (rings + figure reset) */
+        sp(x, "gverb", 64);
+        note(x, 36, 127); cap(x, A, 128);
+        note(x, 36, 127); cap(x, B, 128);
+        CHECK(capdiff(A, B, 128) < 1e-9, "max-length verb: two hits bit-identical");
+        /* the tail's liveness: taps spread to ~846 ms keep the wet alive to ~1 s, then the voice
+         * drops (windows provisional: measure, then pin) */
+        note(x, 36, 127);
+        { Stat far = run_from(x, 300, 40);      /* ~871..987 ms */
+          CHECK(far.rms > 1e-6, "max-length tail alive at ~0.9 s (rms %.8f)", far.rms); }
+        { Stat dead = run_from(x, 960, 60);     /* ~2.79..2.96 s */
+          CHECK(dead.peak == 0 && dead.nan == 0, "max-length tail drops, no denormals (peak %d nan %d)",
+                dead.peak, dead.nan); }
+        sp(x, "gverb", 0); sp(x, "gverb_length", 0);
     }
 
     E->destroy(y);

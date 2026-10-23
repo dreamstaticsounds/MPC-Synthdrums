@@ -83,24 +83,31 @@ float fx_comb(CombSt *cb, float x, float ms, float fb, float g);
 /* Gated reverb: a Schroeder bank (4 combs + 2 allpass) behind a per-hit gate — the gate is open for
  * GATE_S from the hit, then fades out over 5 ms, so the tail stops dead (the classic gated look). The
  * gate's age t_hit comes from the voice's own per-hit timer. */
-/* The gated verb (1.0.2): Airwindows Bright Ambience 3, vendored (third_party/airwindows-
- * brightambience3/) with three knobs baked — A = 0.13 (start 140), B = 0 (length 1), C = 0
- * (feedback 0) — so what remains is ONE prime tap per channel through the vendor's 1 kHz "figure"
- * resonator, wet blended by the GVERB knob. The taps are the vendor's own prime table entries
- * (it deliberately taps a different prime per channel: stereo decorrelation). Wet 0 skips the
- * module entirely (exact bypass). No per-hit gate: the tail's liveness is clocked in voice.c. */
-#define BA3_TAP_L 6247                 /* primeL[140], the baked A=0.13 tap, ~141.7 ms */
+/* The gated verb (1.0.3): Airwindows Bright Ambience 3, vendored (third_party/airwindows-
+ * brightambience3/) with two knobs baked — A = 0.13 (start 140), C = 0 (feedback 0) — and B (the
+ * vendor's LENGTH) reaching the 1.0.3 GVERB LENGTH knob: the tap count, 1..488, default 1 = the
+ * 1.0.2 sound. The taps are the vendor's own prime table entries (it deliberately taps a
+ * different prime per channel: stereo decorrelation), read through the vendor's 1 kHz "figure"
+ * resonator, wet blended by the GVERB knob. Wet 0 skips the module entirely (exact bypass). No
+ * per-hit gate: the tail's liveness is clocked in voice.c. */
+#define BA3_TAP_L 6247                 /* primeL[140]: the length-1 tap, ~141.7 ms (the direct-call tests) */
 #define BA3_TAP_R 6229                 /* primeR[140], ~141.2 ms */
+#define BA3_RING_L 32538               /* primeL[487]+1: the largest reachable offset (the vendor's
+                                        * clamp keeps start+length <= 488) + 1, so every read at
+                                        * wl-prime wraps with a single add */
+#define BA3_RING_R 32534               /* primeR[487]+1 */
 #define VERB_HORIZON_S 0.6f            /* the voice may live this long past the verb's last energy:
-                                        * the ~142 ms tap plus the figure ring's decay */
+                                        * the taps plus the figure ring's decay */
 typedef struct {
-    float l[BA3_TAP_L], r[BA3_TAP_R];  /* the two rings, exactly one tap long each */
+    float l[BA3_RING_L], r[BA3_RING_R];  /* the rings: long enough for every reachable prime offset */
     int wl, wr;                        /* the write heads (read-before-write: a pure tap delay) */
+    int len;                           /* the length cbrt_len was computed for (the divisor cache) */
+    double cbrt_len;                   /* cbrt(length): the vendor's tap-sum divisor */
     float fy1, fy2, fr1, fr2;          /* the figure resonator's state: L pair, R pair */
     float b2, b4, b5, b6;              /* the figure's coefficients (computed by verb_reset) */
 } VerbSt;
 void verb_reset(VerbSt *v);            /* zeroes state + rings, sets the figure's coefficients */
-void verb_step(VerbSt *v, float inl, float inr, float wet, float *ol, float *orr);
+void verb_step(VerbSt *v, float inl, float inr, int length, float wet, float *ol, float *orr);
 void fx_width(float *l, float *r, float w01);  /* the chain-end stereo widener (1.0.2) */
 
 /* The stereo delay: Airwindows Doublelay, vendored and adapted (MIT License:

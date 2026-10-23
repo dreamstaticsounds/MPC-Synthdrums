@@ -311,6 +311,11 @@ static int get_param(void *p, const char *k, char *buf, int n)
                     const int st = (int)(v * 18.0f / 127.0f + 0.5f);
                     return put(buf, n, st == 0 ? "OFF" : SD_DIV_WORDS[st - 1]);
                 }
+                if (j == P_GVERB_LENGTH) {
+                    /* the tap count, not the knob value (the same mapping voice.c uses): 0 -> 1 .. 127 -> 488 */
+                    snprintf(t, sizeof t, "%d", (int)(pow((double)v / 127.0, 2.0) * 487.0) + 1);
+                    return put(buf, n, t);
+                }
                 if (j == P_LFO1_RATE || j == P_LFO2_RATE || j == P_LFO3_RATE) {
                     /* synced: the division governs the rate (the knob reads SYNC); free-run: the
                      * knob's 0.02..20 Hz exponential sweep, the same mapping the voice uses */

@@ -385,6 +385,11 @@ void sd_voice_render(Voice *v, float *bus, int frames, float bpm)
     const float comb01 = PP(P_COMB) * (1.0f / 127.0f);
     const float comb_ms = 0.5f * powf(60.0f, comb01);      /* 0.5 ms at 0 .. 30 ms at 127 */
     const float gverb_m = PP(P_GVERB) * (1.0f / 127.0f);
+    /* the gated verb's length (1.0.3, design §4): the knob maps to BA3's tap count, exactly the
+     * vendor's (int)(pow(B,2)*487)+1 with B = knob/127 -- 0 -> 1 tap (the 1.0.2 sound, bit-
+     * identical), 127 -> 488. Double math; the same expression prints the readout in synth.c's
+     * `_display` (keep the two in sync). */
+    const int gverb_len = (int)(pow((double)PP(P_GVERB_LENGTH) / 127.0, 2.0) * 487.0) + 1;
     /* The stereo widener knob (1.0.2): 0 = the stage is skipped entirely (exact bypass). */
     const float width01 = PP(P_WIDTH) * (1.0f / 127.0f);
     /* The stereo delay (spec §8, LAST in the chain): the two times (1..1000 ms, a log knob -- the
@@ -545,7 +550,7 @@ void sd_voice_render(Voice *v, float *bus, int frames, float bpm)
         if (gverb_m > 0.0f) {
             if (fabsf(ol) > verb_in_peak) verb_in_peak = fabsf(ol);
             if (fabsf(orr) > verb_in_peak) verb_in_peak = fabsf(orr);
-            verb_step(&v->verb, ol, orr, gverb_m, &ol, &orr);
+            verb_step(&v->verb, ol, orr, gverb_len, gverb_m, &ol, &orr);
             if (fabsf(ol) > verb_wet_peak) verb_wet_peak = fabsf(ol);
             if (fabsf(orr) > verb_wet_peak) verb_wet_peak = fabsf(orr);
         }
