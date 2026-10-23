@@ -1162,7 +1162,7 @@ def build(layout_path, params, skin_dir, art_bin, png_from_ppm):
                 if k not in index:
                     raise SystemExit("layout: qlinks key %r is not a parameter" % k)
                 ql["Q-Link %d" % qlink_for_slot(s)] = index[k]
-            comp = "%s|%s" % (tab["name"], title)
+            comp = "%s|%s|%d" % (tab["name"], title, sp)   # 1.0.2: bare tab titles; keep componentName unique per sub-page
             pages.append({"version": 3, "tabName": title, "fnKeyIndex": t, "fnKeySubIndex": sp,
                           "qlinkBoundsData": qlink_column_bounds(tab, keys, base_dir) if QLINK_COLUMNS else ["0 0 0 0"],
                           "componentName": comp,

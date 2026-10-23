@@ -421,7 +421,7 @@ def layout_conf():
         for i, key in enumerate(k for b in banks for k in b):
             L.append('knob cx=%d cy=%d r=12 label="" key=%s ns=0 bw=30' % (24 + 34 * (i % 36), Y0 + 24 + 40 * (i // 36), key))
         for i, b in enumerate(banks):
-            L.append('qlinks "%s %d" = %s' % (name, i + 1, ",".join(b)))
+            L.append('qlinks "%s" = %s' % (name, ",".join(b)))
         for c in PAGES[TABS.index(name)]().controls:   # popup pickers: their order fixes the __open params' indices
             if c["kind"] == "popup":
                 popups.append(c["key"])
