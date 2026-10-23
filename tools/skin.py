@@ -478,19 +478,28 @@ def key_pics(bg, c):
     x, y, w, h = c["rect"]
     out = []
     for lit in (False, True):
-        im = bg.crop((x, y, x + w, y + h)).convert("RGBA")
+        # a popup field (1.0.2): a fully transparent canvas -- only the border and the chevron are
+        # drawn, so the value label under the Button shows through its window (the Button's bounds,
+        # not its pixels, are the touch target: the whole rect opens the list)
+        im = (Image.new("RGBA", (w, h), (0, 0, 0, 0)) if c.get("field")
+              else bg.crop((x, y, x + w, y + h)).convert("RGBA"))
         big = Image.new("RGBA", (w * SS, h * SS), (0, 0, 0, 0))
         d = ImageDraw.Draw(big)
         face = c.get("colour", ACCENT) if lit else KEY_FACE
         ink = TAB_INK if lit else INK
-        if lit:
-            glow = Image.new("RGBA", (w * SS, h * SS), (0, 0, 0, 0))
-            ImageDraw.Draw(glow).rounded_rectangle((2 * SS, 2 * SS, w * SS - 2 * SS, h * SS - 2 * SS), radius=7 * SS,
-                                                   fill=ACCENT + (150,))
-            big.alpha_composite(glow.filter(ImageFilter.GaussianBlur(4 * SS)))
-        d.rounded_rectangle((2 * SS, 2 * SS, w * SS - 3 * SS, h * SS - 3 * SS), radius=7 * SS, fill=face + (255,),
-                            outline=(140, 136, 132, 255) if not lit else (255, 190, 120, 255), width=2 * SS)
-        d.line((10 * SS, 4 * SS, w * SS - 11 * SS, 4 * SS), fill=(255, 255, 255, 70), width=SS)   # the top edge's light
+        if c.get("field"):
+            d.rounded_rectangle((2 * SS, 2 * SS, w * SS - 3 * SS, h * SS - 3 * SS), radius=7 * SS,
+                                fill=ACCENT + (150,) if lit else (0, 0, 0, 0),
+                                outline=(255, 190, 120, 255) if lit else (140, 136, 132, 255), width=2 * SS)
+        else:
+            if lit:
+                glow = Image.new("RGBA", (w * SS, h * SS), (0, 0, 0, 0))
+                ImageDraw.Draw(glow).rounded_rectangle((2 * SS, 2 * SS, w * SS - 2 * SS, h * SS - 2 * SS), radius=7 * SS,
+                                                       fill=ACCENT + (150,))
+                big.alpha_composite(glow.filter(ImageFilter.GaussianBlur(4 * SS)))
+            d.rounded_rectangle((2 * SS, 2 * SS, w * SS - 3 * SS, h * SS - 3 * SS), radius=7 * SS, fill=face + (255,),
+                                outline=(140, 136, 132, 255) if not lit else (255, 190, 120, 255), width=2 * SS)
+            d.line((10 * SS, 4 * SS, w * SS - 11 * SS, 4 * SS), fill=(255, 255, 255, 70), width=SS)   # the top edge's light
         arrow = c.get("arrow")
         if arrow:
             cx, cy, a = w * SS / 2, h * SS / 2, min(w, h) * SS * 0.22
@@ -567,7 +576,8 @@ KNOB_ACTIONS = [action("Mouse Down", "Q-Link"), action("Double Click", "Show Ove
                 action("Enter Pressed", "Show Overlay", "knob overlay")]
 KEY_ACTIONS = [action("Mouse Down", "Q-Link"), action("Enter Pressed", "Toggle Switch")]
 RADIO_ACTIONS = [action("Mouse Down", "Q-Link")]
-FIELD_ACTIONS = [action("Mouse Down", "Toggle Switch"), action("Enter Pressed", "Toggle Switch")]
+FIELD_ACTIONS = [action("Mouse Down", "Toggle Switch")]   # one toggle per tap (1.0.2): a press+enter
+# pair must not fire twice -- that opened the list and instantly closed it again
 
 
 def definition(key, actions, parts, ignore=False):
@@ -689,18 +699,19 @@ def build_page(pg, tab, sv, defs, cache):
             n = len(PBYKEY[key]["options"])
             oi, ei = OPEN_INDEX[key], INDEX[key]
             # the field: a key on the hidden "__open" param (a tap toggles the list; lit while it is open),
-            # with the enum's chosen option beside the drop-down chevron
-            f = dict(rect=c["rect"], key=key, word="", px=16, colour=ACCENT, chev=True)
+            # with the enum's chosen option beside the drop-down chevron; its art is a transparent window
+            # placed AFTER the label, so it sits on top and the whole rect takes the touch (1.0.2)
+            f = dict(rect=c["rect"], key=key, word="", px=16, colour=ACCENT, chev=True, field=True)
             off, on = key_pics(pg.bg, f)
-            on_n = sv.save(on.convert("RGB"), "sd_%s_key_%s_on.png" % (t, key))
-            off_n = sv.save(off.convert("RGB"), "sd_%s_key_%s_off.png" % (t, key))
+            on_n = sv.save(on, "sd_%s_key_%s_on.png" % (t, key))
+            off_n = sv.save(off, "sd_%s_key_%s_off.png" % (t, key))
             dkey = "sdKey_%s_%s" % (t, key)
             add_def(dkey, FIELD_ACTIONS, [focus(w, h), button(on_n, off_n, 1, 1, w, h)])
-            kids.append(placed(dkey, key + " field", oi, c["rect"], True))
             vw = w - 40
             vdkey = "sdValue_%d_%d_24_1" % (vw, h)
             add_def(vdkey, [], [value_label(vw, h, 24, left=True)], ignore=True)
             kids.append(placed(vdkey, key + " value", ei, (x, y, vw, h), False))
+            kids.append(placed(dkey, key + " field", oi, c["rect"], True))   # later in kids = on top
             # the list: one radio group on the enum, on top of the page and visible only while the flag is
             # on, so the open list takes the touch over whatever is under it and a pick closes it
             cols, cw = POPUP_COLS[key]
