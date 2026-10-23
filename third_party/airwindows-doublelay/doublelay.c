@@ -116,11 +116,11 @@ static float dly_doubler(DlyChan *c, float speed, float in)
     return temp[c->active];
 }
 
-void dly_step(DlySt *d, float inl, float inr, float tl_ms, float tr_ms, float detune01, float fb,
-              float wet, float *ol, float *or_)
+void dly_step(DlySt *d, float inl, float inr, float tl_ms, float tr_ms, float detune01, float fbl,
+              float fbr, float wet, float *ol, float *or_)
 {
     float dryl = inl, dryr = inr;
-    float trim, speedl, speedr, xl, xr, direct, cross;
+    float trim, speedl, speedr, xl, xr;
     int delayl, delayr, count, read;
 
     if (wet == 0.0f) { *ol = inl; *or_ = inr; return; }   /* exact bypass (the voice skips it too) */
@@ -149,11 +149,11 @@ void dly_step(DlySt *d, float inl, float inr, float tl_ms, float tr_ms, float de
     xr = dly_air(&d->airPrevR, &d->airEvenR, &d->airOddR, d->flip, inr);
     d->flip = !d->flip;
 
-    /* The golden-ratio feedback into the write: mostly direct, some cross -- the tails widen. */
-    direct = fb * 0.618034f;
-    cross = fb * (1.0f - 0.618034f);
-    xl += d->feedbackL * direct + d->feedbackR * cross;
-    xr += d->feedbackR * direct + d->feedbackL * cross;
+    /* the golden-ratio direct+cross feedback, per side (1.0.3 design §2): each line's two terms
+     * scale by its OWN knob -- at fbl == fbr this is the 1.0.2 expression, operation for
+     * operation, so equal knobs reduce bit-identically (the verb-delay golden pins it) */
+    xl += d->feedbackL * (fbl * 0.618034f) + d->feedbackR * (fbl * (1.0f - 0.618034f));
+    xr += d->feedbackR * (fbr * 0.618034f) + d->feedbackL * (fbr * (1.0f - 0.618034f));
 
     /* Write both main lines, read the delayed samples (integer, vendor), step the descending cursor. */
     if (d->dcount < 1 || d->dcount > DL_LINE) d->dcount = DL_LINE;

@@ -133,8 +133,8 @@ typedef struct {
     int dcount;                 /* the main lines' descending write cursor */
 } DlySt;
 void dly_reset(DlySt *d);
-void dly_step(DlySt *d, float inl, float inr, float tl_ms, float tr_ms, float detune01, float fb,
-              float wet, float *ol, float *or_);
+void dly_step(DlySt *d, float inl, float inr, float tl_ms, float tr_ms, float detune01, float fbl,
+              float fbr, float wet, float *ol, float *or_);
 
 /* The choke fade: 5 ms, from full level to silence. */
 #define CHOKE_FADE_S 0.005f

@@ -624,7 +624,7 @@ int main(void)
     sp(x, "voice", 0);
     sp(x, "src_mix", 0); sp(x, "osc_decay", 20); sp(x, "osc_shape", 0);   /* the dry body dies by ~108 ms */
     sp(x, "delay_wet", 127); sp(x, "delay_l", 102); sp(x, "delay_r", 102);  /* 1000^(102/127) ~ 257 ms */
-    sp(x, "delay_fb", 64); sp(x, "delay_detune", 64);
+    sp(x, "delay_l_fb", 64); sp(x, "delay_r_fb", 64); sp(x, "delay_detune", 64);
     note(x, 36, 127);
     Stat dl_pre = run_from(x, 0, 60);                        /* 0..174 ms: still inside the delay line */
     CHECK(dl_pre.nan == 0 && dl_pre.rms < 1e-4, "full wet: silent before the delay time (%.6f)", dl_pre.rms);
@@ -637,18 +637,18 @@ int main(void)
     Stat dl_off = run_from(x, 80, 15);
     CHECK(dl_off.rms < 1e-5, "wet 0 is silent in the tail window (%.6f)", dl_off.rms);
     /* feedback at the knob max cannot run away (fb_eff caps at 0.95) */
-    sp(x, "delay_wet", 127); sp(x, "delay_fb", 127); note(x, 36, 127);
+    sp(x, "delay_wet", 127); sp(x, "delay_l_fb", 127); sp(x, "delay_r_fb", 127); note(x, 36, 127);
     Stat dl_s = run(x, 200);
     CHECK(dl_s.nan == 0 && dl_s.peak < 32767, "fb 127 bounded (%d)", dl_s.peak);
     /* without feedback the single echo ends, and the tail window is silent */
-    sp(x, "delay_fb", 0); note(x, 36, 127);
+    sp(x, "delay_l_fb", 0); sp(x, "delay_r_fb", 0); note(x, 36, 127);
     run_from(x, 120, 40);                                    /* past the echo (~257 + 60 ms) */
     Stat dl_far = run(x, 40);
     CHECK(dl_far.nan == 0 && dl_far.peak < 300, "tail ends and the voice goes silent (%d)", dl_far.peak);
     /* the choke cuts the delay tail: voice 0 (panned left) rings in group 1, voice 2 (also group 1,
      * panned right, body short) triggers and must silence the left channel completely */
     sp(x, "voice", 0); sp(x, "osc_decay", 127); sp(x, "out_pan", -63); sp(x, "choke", 1);
-    sp(x, "delay_fb", 64);
+    sp(x, "delay_l_fb", 64); sp(x, "delay_r_fb", 64);
     sp(x, "voice", 2); sp(x, "src_mix", 0); sp(x, "osc_decay", 30); sp(x, "out_pan", 63); sp(x, "choke", 1);
     sp(x, "voice", 0); note(x, 36, 127);
     run(x, 90);                                              /* ~261 ms: the dry is long dead, the tail rings */
@@ -662,7 +662,7 @@ int main(void)
     /* two hits bit-identical with the delay engaged (delay ~2.3 ms: the echo lands inside the
      * 128-frame capture, so the comparison sees real delayed signal) */
     sp(x, "voice", 0); sp(x, "choke", 0); sp(x, "out_pan", 0); sp(x, "osc_decay", 64);
-    sp(x, "delay_fb", 64); sp(x, "delay_wet", 127); sp(x, "delay_l", 15); sp(x, "delay_r", 15);
+    sp(x, "delay_l_fb", 64); sp(x, "delay_r_fb", 64); sp(x, "delay_wet", 127); sp(x, "delay_l", 15); sp(x, "delay_r", 15);
     run(x, 45);    /* flush: voice 2's body must be gone -- the caps compare the whole master bus */
     note(x, 36, 127); cap(x, A, 128);
     note(x, 36, 127); cap(x, B, 128);
@@ -684,7 +684,7 @@ int main(void)
     sp(x, "delay_l_sync", 0); sp(x, "delay_l", 50); E->get_param(x, "delay_l_display", b, sizeof b);
     CHECK(!strcmp(b, "15 ms"), "delay display unsynced (%s)", b);
     /* per-side independence: L synced to "1/4" (500 ms @120), R free at 1 ms */
-    sp(x, "delay_wet", 127); sp(x, "delay_fb", 0);
+    sp(x, "delay_wet", 127); sp(x, "delay_l_fb", 0); sp(x, "delay_r_fb", 0);
     sp(x, "delay_l_sync", 1); sp(x, "delay_l", 50);
     sp(x, "delay_r_sync", 0); sp(x, "delay_r", 0);
     sp(x, "osc_decay", 20);                              /* short body */
@@ -708,7 +708,7 @@ int main(void)
     CHECK(cF.rms < 1e-5, "nothing at 2 s: clamped, not 8 s (%.6f)", cF.rms);
     sp(x, "delay_l_sync", 0); sp(x, "delay_r_sync", 0);
     /* leave the delay off (exact bypass) for every later block */
-    sp(x, "delay_detune", 64); sp(x, "delay_l", 64); sp(x, "delay_r", 64); sp(x, "delay_fb", 64);
+    sp(x, "delay_detune", 64); sp(x, "delay_l", 64); sp(x, "delay_r", 64); sp(x, "delay_l_fb", 64); sp(x, "delay_r_fb", 64);
     sp(x, "delay_wet", 0); sp(x, "voice", 0); sp(x, "osc_decay", 127);
 
     /* ---- Task 10: the stereo widener at the chain end (1.0.2) ---- */
@@ -901,6 +901,72 @@ for (int v = 0; v < 12; v++) { sp(x, "voice", v); sp(x, "osc_decay", 127); sp(x,
   sp(x, "out_pan", 0); sp(x, "choke", 0); sp(x, "trig", 1); }
 s = run(x, 100);
 CHECK(s.nan == 0 && s.peak <= 32767 && s.peak > 24000, "12-voice sum loud and under ceiling (%d)", s.peak);
+
+    /* ---- 1.0.3 Task 3: per-side delay feedback (design §2) ---- */
+    {
+        static float A[128*128], B[128*128];
+        StatLR lr, l0, l1, l2;
+        /* isolate: the 12-voice test just before this block left voices 1..11 ringing -- their hits
+         * (osc_decay/out_vol 127) decay for seconds and would pollute every window below; a note
+         * folds to ONE voice, so only voice 0 retriggered. Silence them once here (they stay silent
+         * for Tasks 4-6, which either test voice 0 or are parameter-only). */
+        for (int v = 1; v < 12; v++) { sp(x, "voice", v); sp(x, "out_vol", 0); }
+        sp(x, "voice", 0);
+        /* prelude: one clean loud voice; full-wet fast delay; verb/FX off; no modulation */
+        sp(x, "voice", 0); sp(x, "base_note", 36); sp(x, "src_mix", 0); sp(x, "osc_decay", 64);
+        sp(x, "vel_to_vol", 127); sp(x, "vel_to_cut", 0); sp(x, "filter_cutoff", 127);
+        sp(x, "filter_res", 0); sp(x, "fenv_amount", 0); sp(x, "gverb", 0); sp(x, "width", 0);
+        sp(x, "dist_drive", 0); sp(x, "ring_mod", 0); sp(x, "fm_index", 0); sp(x, "comb", 0);
+        sp(x, "delay_wet", 127); sp(x, "delay_l", 15); sp(x, "delay_r", 15); sp(x, "delay_detune", 0);
+        sp(x, "lfo1_depth", 0); sp(x, "lfo1_dest", 0); sp(x, "lfo1_sync", 0); sp(x, "lfo1_retrig", 1);
+        sp(x, "lfo1_rate", 100);
+        /* independence (differential -- the design §2 claim, §2 "with fbr = 0 the right samples
+         * cannot depend on fbl"): with fbr = 0 the right output is BIT-IDENTICAL while fbl moves,
+         * and vice versa. Absolute "silent channel" thresholds don't hold here: at osc_decay 64 the
+         * dry body is still alive in the 116..232 ms window (measured ~0.19 dry / ~0.134 delayed)
+         * and feeds both channels. */
+        sp(x, "delay_l_fb", 0); sp(x, "delay_r_fb", 0);
+        note(x, 36, 127); l0 = run_lr_from(x, 40, 40);
+        sp(x, "delay_l_fb", 127);
+        note(x, 36, 127); l1 = run_lr_from(x, 40, 40);
+        CHECK(fabs(l1.left - l0.left) > 1e-5, "fbl rings the left loop (%.6f vs %.6f)", l1.left, l0.left);
+        CHECK(fabs(l1.right - l0.right) < 1e-9, "fbr = 0: the right loop ignores fbl (%.6f vs %.6f)",
+              l1.right, l0.right);
+        sp(x, "delay_l_fb", 0); sp(x, "delay_r_fb", 127);
+        note(x, 36, 127); l2 = run_lr_from(x, 40, 40);
+        CHECK(fabs(l2.right - l0.right) > 1e-5, "fbr rings the right loop (%.6f vs %.6f)", l2.right, l0.right);
+        CHECK(fabs(l2.left - l0.left) < 1e-9, "fbl = 0: the left loop ignores fbr (%.6f vs %.6f)",
+              l2.left, l0.left);
+        /* the retired knob: 0 vs 127 gives identical tails (echo rounds inside the window) */
+        sp(x, "delay_l_fb", 64); sp(x, "delay_r_fb", 64); sp(x, "delay_l", 64); sp(x, "delay_r", 64);
+        sp(x, "delay_fb", 0);
+        note(x, 36, 127); lr = run_lr_from(x, 140, 40);
+        sp(x, "delay_fb", 127);
+        note(x, 36, 127);
+        { StatLR lr2 = run_lr_from(x, 140, 40);
+          CHECK(fabs(lr.left - lr2.left) < 1e-9 && fabs(lr.right - lr2.right) < 1e-9,
+                "retired delay_fb: 0 vs 127 is bit-identical"); }
+        /* the DEST list: DELAY FB modulates nothing; DELAY L FB owns the left loop only (with
+         * fbr = 0 the right samples cannot depend on fbl: its terms all carry fbr) */
+        {
+            int di = 0, di_l = 0;
+            while (strcmp(DEST_KEYS[di], "delay_fb")) di++;
+            while (strcmp(DEST_KEYS[di_l], "delay_l_fb")) di_l++;
+            sp(x, "delay_l", 15); sp(x, "delay_r", 15); sp(x, "delay_l_fb", 0); sp(x, "delay_r_fb", 0);
+            sp(x, "lfo1_dest", di); sp(x, "lfo1_depth", 0); note(x, 36, 127); run(x, 5); cap(x, A, 128);
+            sp(x, "lfo1_depth", 63); note(x, 36, 127); run(x, 5); cap(x, B, 128);
+            CHECK(capdiff(A, B, 128) < 1e-9, "DEST DELAY FB modulates nothing (retired)");
+            sp(x, "delay_l_fb", 64);      /* fbr stays 0: the right output cannot move */
+            sp(x, "lfo1_dest", di_l); sp(x, "lfo1_depth", 0); note(x, 36, 127);
+            { StatLR a = run_lr_from(x, 5, 20);
+              sp(x, "lfo1_depth", 63); note(x, 36, 127);
+              StatLR b2 = run_lr_from(x, 5, 20);
+              CHECK(fabs(a.left - b2.left) > 1e-5, "DEST DELAY L FB modulates the left loop");
+              CHECK(fabs(a.right - b2.right) < 1e-9, "DEST DELAY L FB leaves the right loop bit-identical"); }
+            sp(x, "lfo1_depth", 0); sp(x, "lfo1_dest", 0); sp(x, "delay_l_fb", 64); sp(x, "delay_r_fb", 64);
+        }
+        sp(x, "delay_wet", 64); sp(x, "delay_l", 64); sp(x, "delay_r", 64);   /* leave the delay mid */
+    }
 
     E->destroy(y);
     E->destroy(x);

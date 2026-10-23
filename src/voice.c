@@ -407,7 +407,12 @@ void sd_voice_render(Voice *v, float *bus, int frames, float bpm)
     if (dly_l_ms > 1000.0f) dly_l_ms = 1000.0f;
     if (dly_r_ms > 1000.0f) dly_r_ms = 1000.0f;
     const float dly_det = PP(P_DELAY_DETUNE) * (1.0f / 127.0f);
-    const float dly_fb = PP(P_DELAY_FB) * (0.95f / 127.0f);
+    /* the delay's feedback (1.0.3, design §2): the two loops each have their own knob. The old
+     * delay_fb param is retired -- kept in the enum for append-only compat, read by nothing (its
+     * LFO dest modulates nothing). At equal knob values dly_step reduces to the 1.0.2 expression,
+     * so a chunk saved with delay_fb = N sounds like both knobs at N. */
+    const float dly_fb_l = PP(P_DELAY_L_FB) * (0.95f / 127.0f);
+    const float dly_fb_r = PP(P_DELAY_R_FB) * (0.95f / 127.0f);
     const float dly_wet = PP(P_DELAY_WET) * (1.0f / 127.0f);
     float dly_in_peak = 0.0f, dly_wet_peak = 0.0f;   /* the block's peaks: the tail-liveness clock */
     float verb_in_peak = 0.0f, verb_wet_peak = 0.0f; /* the verb's own tail-liveness peaks (1.0.2) */
@@ -528,7 +533,7 @@ void sd_voice_render(Voice *v, float *bus, int frames, float bpm)
         if (fabsf(ol) > dly_in_peak) dly_in_peak = fabsf(ol);
         if (fabsf(orr) > dly_in_peak) dly_in_peak = fabsf(orr);
         if (dly_wet > 0.0f) {
-            dly_step(&v->dly, ol, orr, dly_l_ms, dly_r_ms, dly_det, dly_fb, dly_wet, &ol, &orr);
+            dly_step(&v->dly, ol, orr, dly_l_ms, dly_r_ms, dly_det, dly_fb_l, dly_fb_r, dly_wet, &ol, &orr);
             if (fabsf(ol) > dly_wet_peak) dly_wet_peak = fabsf(ol);
             if (fabsf(orr) > dly_wet_peak) dly_wet_peak = fabsf(orr);
         }
