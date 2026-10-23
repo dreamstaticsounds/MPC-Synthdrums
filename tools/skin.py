@@ -285,15 +285,14 @@ def filter_page():
                   ("nfilt_vel", "N.FILTER VEL")], 32, 492, 700, lcd_w=112)
     # the stutter, stacked in a narrow strip beside them
     panel(pg, (752, 48, 124, 564), "STUTTER")
-    knob(pg, "stutter_length", 814, 259, 76, "STUTTER LEN", label_w=112)
+    knob(pg, "stutter_length", 814, 259, 76, "STUTTER RATE", label_w=112)
     knob(pg, "stutter_strength", 814, 424, 76, "STUTTER STR", label_w=112)
-    # the three peaking bands: rows = the parameter, columns = the band; the freq windows are wide
-    # enough for the longest readout ("12.0 kHz")
+    # the three peaking bands: one row per band (1.0.2: Freq/Gain/Q together), rows at y 170/341/512
+    # like the old layout; the freq windows are wide enough for the longest readout ("12.0 kHz")
     panel(pg, (888, 48, 376, 564), "EQ")
-    knob_row(pg, [("eq_freq", "EQ FREQ"), ("eq2_freq", "EQ2 FREQ"), ("eq3_freq", "EQ3 FREQ")],
-             888, 170, 376, lcd_w=112)
-    knob_row(pg, [("eq_gain", "EQ GAIN"), ("eq2_gain", "EQ2 GAIN"), ("eq3_gain", "EQ3 GAIN")], 888, 341, 376)
-    knob_row(pg, [("eq_q", "EQ Q"), ("eq2_q", "EQ2 Q"), ("eq3_q", "EQ3 Q")], 888, 512, 376)
+    for j, (pk, pre) in enumerate((("eq_", "EQ1 "), ("eq2_", "EQ2 "), ("eq3_", "EQ3 "))):
+        knob_row(pg, [(pk + "freq", pre + "FREQ"), (pk + "gain", pre + "GAIN"), (pk + "q", pre + "Q")],
+                 888, 170 + 171 * j, 376, lcd_w=112)
     return pg
 
 
