@@ -78,7 +78,7 @@ float fx_fm(FmSt *f, float x, float idx, float g);
  * the longest delay (30 ms = 1323 samples) plus linear-interp margin; w is the write cursor. */
 #define COMB_BUF 1408
 typedef struct { float buf[COMB_BUF]; int w; } CombSt;
-float fx_comb(CombSt *cb, float x, float ms, float fb, float g);
+float fx_comb(CombSt *cb, float x, float ms, float fb, float mix01);
 
 /* Gated reverb: a Schroeder bank (4 combs + 2 allpass) behind a per-hit gate — the gate is open for
  * GATE_S from the hit, then fades out over 5 ms, so the tail stops dead (the classic gated look). The

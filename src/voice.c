@@ -241,6 +241,10 @@ void sd_voice_note(Voice *v, float vel)
     v->sounding = 1;
 }
 
+/* a 0..127 knob as 0..1, exactly 1.0f at 127: the FX mixes' pure-wet default must take the
+ * shortcut paths with no extra arithmetic (bit-identical to 1.0.2) */
+static inline float knob01(float k) { return k >= 127.0f ? 1.0f : k * (1.0f / 127.0f); }
+
 void sd_voice_render(Voice *v, float *bus, int frames, float bpm)
 {
     /* The block's working copy of the knobs: the LFOs modulate it (block rate), so every block-level
@@ -384,6 +388,10 @@ void sd_voice_render(Voice *v, float *bus, int frames, float bpm)
     const float fm_idx = 8.0f * fm_g;
     const float comb01 = PP(P_COMB) * (1.0f / 127.0f);
     const float comb_ms = 0.5f * powf(60.0f, comb01);      /* 0.5 ms at 0 .. 30 ms at 127 */
+    /* the three wet/dry mixes (1.0.3, design §6) */
+    const float ring_mix = knob01(PP(P_RING_MIX));
+    const float fm_mix = knob01(PP(P_FM_MIX));
+    const float comb_mix = knob01(PP(P_COMB_MIX));
     const float gverb_m = PP(P_GVERB) * (1.0f / 127.0f);
     /* the gated verb's length (1.0.3, design §4): the knob maps to BA3's tap count, exactly the
      * vendor's (int)(pow(B,2)*487)+1 with B = knob/127 -- 0 -> 1 tap (the 1.0.2 sound, bit-
@@ -518,12 +526,21 @@ void sd_voice_render(Voice *v, float *bus, int frames, float bpm)
         out = eq_step(&v->eq[1], out);
         out = eq_step(&v->eq[2], out);
 
-        /* The FX row: ring mod, operator FM, comb — each exact bypass at 0. The FM operator is gated
-         * by the osc amp env (g * v->amp): it dies with the envelope, so a hit that has run out leaves
-         * no 150 Hz drone behind (1.0.2). The gated verb left this row: it now runs after the delay. */
-        out = fx_ring(&v->ring, out, ring_hz, ring_wet);
-        out = fx_fm(&v->fm, out, fm_idx, fm_g * v->amp);
-        out = fx_comb(&v->comb, out, comb_ms, 0.75f, comb01);
+        /* The FX row: ring mod, operator FM, comb — engagement 0 is exact bypass. The three mixes
+         * (1.0.3, design §6): 127 is the pure wet (bit-identical to 1.0.2), 0 exact dry, between an
+         * equal-gain blend. The FM operator is gated by the osc amp env (g * v->amp): it dies with
+         * the envelope, so a hit that has run out leaves no 150 Hz drone behind (1.0.2). The gated
+         * verb left this row: it now runs after the delay. */
+        {
+            float dry = out, w = fx_ring(&v->ring, out, ring_hz, ring_wet);
+            if (ring_wet > 0.0f && ring_mix > 0.0f) out = ring_mix >= 1.0f ? w : dry + (w - dry) * ring_mix;
+        }
+        {
+            float dry = out, w = fx_fm(&v->fm, out, fm_idx, fm_g * v->amp);
+            if (fm_g > 0.0f && fm_mix > 0.0f) out = fm_mix >= 1.0f ? w : dry + (w - dry) * fm_mix;
+        }
+        /* the comb's engagement gate skips the call entirely at comb 0 (1.0.2's no-state bypass) */
+        if (comb01 > 0.0f) out = fx_comb(&v->comb, out, comb_ms, 0.75f, comb_mix);
 
         /* The level and the pan: the voice's mono signal becomes stereo here (spec §8: everything up
          * to and including the comb is mono; the delay runs true stereo after the pan, its wet

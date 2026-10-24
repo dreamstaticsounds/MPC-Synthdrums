@@ -153,14 +153,14 @@ float fx_fm(FmSt *f, float x, float idx, float g)
 
 /* Comb: a feedback delay line (the write is x + fb*read, the output is the read head — a resonant
  * comb). The delay moves with the knob's ms; the read head interpolates linearly. The buffer covers
- * 30 ms (1323 samples) plus interp margin; g == 0 is exact bypass (a retrigger resets the buffer, so
- * an old tail can never leak into a fresh hit). */
-float fx_comb(CombSt *cb, float x, float ms, float fb, float g)
+ * 30 ms (1323 samples) plus interp margin; mix01 == 0 is exact bypass (a retrigger resets the buffer,
+ * so an old tail can never leak into a fresh hit; the caller also skips the call at engagement 0). */
+float fx_comb(CombSt *cb, float x, float ms, float fb, float mix01)
 {
     float rp, s;
     int i0;
 
-    if (g == 0.0f) return x;
+    if (mix01 == 0.0f) return x;             /* the mix's exact bypass: the buffer is untouched */
     rp = (float)cb->w - ms * (SD_SR * 0.001f);   /* the read head: d samples behind the write */
     while (rp < 0.0f) rp += (float)COMB_BUF;
     i0 = (int)rp;
@@ -168,7 +168,8 @@ float fx_comb(CombSt *cb, float x, float ms, float fb, float g)
     _Static_assert(1323 + 1 <= COMB_BUF, "the comb buffer covers 30 ms plus the interp read");
     cb->buf[cb->w] = x + fb * s;
     cb->w = (cb->w + 1) % COMB_BUF;
-    return s;
+    if (mix01 >= 1.0f) return s;             /* the pure wet (the 1.0.2 engaged sound): no dry arithmetic */
+    return x + (s - x) * mix01;              /* equal-gain linear blend */
 }
 
 /* 1.0.2: the stereo widener, the chain's last stage (right before the choke fade). width 0 = exact

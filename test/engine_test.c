@@ -1027,6 +1027,62 @@ CHECK(s.nan == 0 && s.peak <= 32767 && s.peak > 24000, "12-voice sum loud and un
         sp(x, "gverb", 0); sp(x, "gverb_length", 0);
     }
 
+    /* ---- 1.0.3 Task 6: the three FX wet/dry mixes (design §6) ---- */
+    {
+        static float A[128 * 128], B[128 * 128], C[128 * 128];
+        /* prelude: one clean loud voice; the modules engaged one at a time */
+        sp(x, "voice", 0); sp(x, "base_note", 36); sp(x, "src_mix", 0); sp(x, "osc_decay", 100);
+        sp(x, "vel_to_vol", 127); sp(x, "vel_to_cut", 0); sp(x, "filter_cutoff", 127);
+        sp(x, "filter_res", 0); sp(x, "fenv_amount", 0); sp(x, "gverb", 0); sp(x, "width", 0);
+        sp(x, "dist_drive", 0); sp(x, "ring_mod", 0); sp(x, "fm_index", 0); sp(x, "comb", 0);
+        sp(x, "ring_mix", 127); sp(x, "fm_mix", 127); sp(x, "comb_mix", 127);
+        /* ring: a mid mix differs from the pure wet; mix 0 == the module off (bit-exact) */
+        sp(x, "ring_mod", 64);
+        note(x, 36, 127); cap(x, A, 128);
+        sp(x, "ring_mix", 64); note(x, 36, 127); cap(x, B, 128);
+        CHECK(capdiff(A, B, 128) > 1e-4, "ring mix blends (differs from the pure wet)");
+        sp(x, "ring_mix", 0); note(x, 36, 127); cap(x, B, 128);
+        sp(x, "ring_mod", 0); note(x, 36, 127); cap(x, C, 128);
+        CHECK(capdiff(B, C, 128) < 1e-9, "ring mix 0 == the module off");
+        /* engagement 0 bypasses regardless of mix (old chunks' zeroed knobs stay dry) */
+        sp(x, "ring_mod", 0); sp(x, "ring_mix", 0); note(x, 36, 127); cap(x, A, 128);
+        sp(x, "ring_mix", 127); note(x, 36, 127); cap(x, B, 128);
+        CHECK(capdiff(A, B, 128) < 1e-9, "ring off: mix 127 == mix 0 (engagement gate)");
+        /* per-hit determinism with the mix at 0 engaged (the fx state parks, not frees) */
+        sp(x, "ring_mod", 64); sp(x, "ring_mix", 0);
+        note(x, 36, 127); cap(x, B, 128); note(x, 36, 127); cap(x, C, 128);
+        CHECK(capdiff(B, C, 128) < 1e-9, "ring mix 0: two hits bit-identical");
+        sp(x, "ring_mod", 0); sp(x, "ring_mix", 127);
+        /* fm: same three, plus the amp-gate path */
+        sp(x, "fm_index", 64);
+        note(x, 36, 127); cap(x, A, 128);
+        sp(x, "fm_mix", 64); note(x, 36, 127); cap(x, B, 128);
+        CHECK(capdiff(A, B, 128) > 1e-4, "fm mix blends");
+        sp(x, "fm_mix", 0); note(x, 36, 127); cap(x, B, 128);
+        sp(x, "fm_index", 0); note(x, 36, 127); cap(x, C, 128);
+        CHECK(capdiff(B, C, 128) < 1e-9, "fm mix 0 == the module off");
+        sp(x, "fm_index", 0); sp(x, "fm_mix", 0); note(x, 36, 127); cap(x, A, 128);
+        sp(x, "fm_mix", 127); note(x, 36, 127); cap(x, B, 128);
+        CHECK(capdiff(A, B, 128) < 1e-9, "fm off: mix 127 == mix 0 (engagement gate)");
+        sp(x, "fm_index", 0); sp(x, "fm_mix", 127);
+        /* comb: a mid mix differs; mix 0 == the module off; and the engagement gate */
+        sp(x, "comb", 32);
+        note(x, 36, 127); cap(x, A, 128);
+        sp(x, "comb_mix", 64); note(x, 36, 127); cap(x, B, 128);
+        CHECK(capdiff(A, B, 128) > 1e-4, "comb mix blends");
+        sp(x, "comb_mix", 0); note(x, 36, 127); cap(x, B, 128);
+        sp(x, "comb", 0); note(x, 36, 127); cap(x, C, 128);
+        CHECK(capdiff(B, C, 128) < 1e-9, "comb mix 0 == the module off");
+        sp(x, "comb_mix", 127); note(x, 36, 127); cap(x, B, 128);
+        sp(x, "comb", 0); sp(x, "comb_mix", 0); note(x, 36, 127); cap(x, C, 128);
+        CHECK(capdiff(B, C, 128) < 1e-9, "comb 0 + mix 127 == comb 0 + mix 0 (engagement gate)");
+        /* determinism with the comb engaged and its mix at 0 (buffer untouched) */
+        sp(x, "comb", 32); sp(x, "comb_mix", 0);
+        note(x, 36, 127); cap(x, B, 128); note(x, 36, 127); cap(x, C, 128);
+        CHECK(capdiff(B, C, 128) < 1e-9, "comb mix 0: two hits bit-identical");
+        sp(x, "comb", 0); sp(x, "comb_mix", 127);
+    }
+
     E->destroy(y);
     E->destroy(x);
     printf(fails ? "FAILED: %d\n" : "PASSED\n", fails);
