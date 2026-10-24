@@ -4,6 +4,13 @@ Two layers: the offline suite that runs on any Linux box (below), and the on-dev
 (armv7, MPC OS). The device steps are **pending**: they need the Force's IP and the user at the unit, so no ssh/scp
 was run for this revision.
 
+**Local wrapper copy.** `src/wrapper/vst2_wrap.c` is the stock framework wrapper with one deliberate change — a
+data-wheel click (1% of a parameter's range) moves **one unit** on every whole-number control. The stock rounding
+moved 1.27 units on a 0..127 knob but one on a 48-step knob, which felt inconsistent on hardware. The vendored
+`third_party/mpc-vst-plugins/` stays byte-identical; `build.sh` and `test/host_test.sh` link the local copy, and the
+framework host test (wheel clicks, Q-Link events, sweeps, jumps) passes against it. Ported from the `main` line's
+1.0.0 fix (commit `c349111`).
+
 ## Offline results
 
 All commands run from the repo root. Re-run on 2026-10-22 for the 1.0.2 release.

@@ -46,10 +46,10 @@ if [ "$ARCH" = aarch64 ]; then
   MOUNTS=(-v "$PWD:$PWD")
   case "$MPC_VST" in "$PWD"/*) ;; *) MOUNTS+=(-v "$MPC_VST:$MPC_VST:ro") ;; esac
   docker run --rm "${MOUNTS[@]}" -w "$PWD" --user "$(id -u):$(id -g)" -e HOME=/tmp \
-    "$MM303_AARCH64" bash tools/compile_arm64.sh "$OUT" "$MPC_VST" $SRCS "$MPC_VST/wrapper/vst2_wrap.c"
+    "$MM303_AARCH64" bash tools/compile_arm64.sh "$OUT" "$MPC_VST" $SRCS src/wrapper/vst2_wrap.c
 else
   OBJS=""
-  for f in $SRCS "$MPC_VST/wrapper/vst2_wrap.c"; do
+  for f in $SRCS src/wrapper/vst2_wrap.c; do
     o="$OUT/$(echo "$f" | tr / _).o"
     $ZIG cc $TGT $COMMON -Ibuild -Isrc -I"$MPC_VST/wrapper" -c "$f" -o "$o"
     OBJS="$OBJS $o"
