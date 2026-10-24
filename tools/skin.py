@@ -299,26 +299,31 @@ def filter_page():
 def fx_page():
     pg = Page("FX")
     text(pg, (1272, 27), "FX", 20, INK_DIM, "rm")
-    # the chain in order: dist (drive + tone) -> ring mod -> FM -> comb -> gated reverb
+    # the chain in order: dist -> ring mod -> FM -> comb -> gated reverb. 1.0.3 (design §5/§6):
+    # each module gains its MIX knob, the verb its LENGTH, dist keeps DRIVE only (dist_tone's
+    # param stays for old chunks -- default-bright, just no control any more)
     panel(pg, (16, 48, 240, 191), "DIST")
-    knob_row(pg, [("dist_drive", "DRIVE"), ("dist_tone", "TONE")], 16, 155, 240, lcd_w=96)
+    knob(pg, "dist_drive", 136, 155, 76, "DRIVE", lcd_rect=(88, 201, 96, 30))
     panel(pg, (268, 48, 240, 191), "RING MOD")
-    knob(pg, "ring_mod", 388, 155, 76, "FREQ", lcd_rect=(340, 201, 96, 30), label_w=216)
+    knob_row(pg, [("ring_mod", "FREQ"), ("ring_mix", "MIX")], 268, 155, 240, lcd_w=96)
     panel(pg, (520, 48, 240, 191), "FM")
-    knob(pg, "fm_index", 640, 155, 76, "INDEX", lcd_rect=(592, 201, 96, 30), label_w=216)
+    knob_row(pg, [("fm_index", "INDEX"), ("fm_mix", "MIX")], 520, 155, 240, lcd_w=96)
     panel(pg, (772, 48, 240, 191), "COMB FLTR")
-    knob(pg, "comb", 892, 155, 76, "TIME", lcd_rect=(844, 201, 96, 30), label_w=216)
+    knob_row(pg, [("comb", "TIME"), ("comb_mix", "MIX")], 772, 155, 240, lcd_w=96)
     panel(pg, (1024, 48, 240, 191), "GATED VERB")
-    knob(pg, "gverb", 1144, 155, 76, "WET MIX", lcd_rect=(1096, 201, 96, 30), label_w=216)
-    # the delay row: its per-side tempo-sync switches (1.0.2) sit under the title tab, the five knobs
-    # below them; the widener (the chain's last stage) takes the right end of the row
+    knob_row(pg, [("gverb", "WET MIX"), ("gverb_length", "LENGTH")], 1024, 155, 240, lcd_w=96)
+    # the delay row (design §1-§3): RESET above the detune, L SYNC above the L knob, R SYNC above
+    # the R knob, then the six knobs (detune, L, R, L FB, R FB, wet); the widener (the chain's
+    # last stage) keeps the right end of the row
     panel(pg, (16, 255, 1000, 357), "DELAY")
-    text(pg, (87, 312), "L SYNC")
-    radio(pg, "delay_l_sync", [(40, 330, 95, 44), (135, 330, 95, 44)], ["OFF", "ON"], "key", 17)
-    text(pg, (307, 312), "R SYNC")
-    radio(pg, "delay_r_sync", [(260, 330, 95, 44), (355, 330, 95, 44)], ["OFF", "ON"], "key", 17)
+    momentary(pg, "fx_reset", (40, 330, 118, 44), "RESET", 16)
+    text(pg, (266, 312), "L SYNC")
+    radio(pg, "delay_l_sync", [(187, 330, 79, 44), (266, 330, 79, 44)], ["OFF", "ON"], "key", 17)
+    text(pg, (433, 312), "R SYNC")
+    radio(pg, "delay_r_sync", [(354, 330, 79, 44), (433, 330, 79, 44)], ["OFF", "ON"], "key", 17)
     knob_row(pg, [("delay_detune", "DELAY DETUNE"), ("delay_l", "DELAY L"), ("delay_r", "DELAY R"),
-                  ("delay_fb", "DELAY FB"), ("delay_wet", "DELAY WET")], 16, 448, 1000, lcd_w=104)
+                  ("delay_l_fb", "DELAY L FB"), ("delay_r_fb", "DELAY R FB"), ("delay_wet", "DELAY WET")],
+             16, 448, 1000, lcd_w=104)
     panel(pg, (1028, 255, 236, 357), "WIDENER")
     knob(pg, "width", 1146, 448, 112, "WIDTH", lcd_rect=(1098, 512, 96, 30))
     return pg
@@ -395,8 +400,9 @@ QLINK_BANKS = {
     "PITCH": [["pitch", "pitch_track", "penv_attack", "penv_decay", "penv_shape", "penv_amount"]],
     "FILTER": [["filter_mode", "filter_cutoff", "filter_res", "fenv_amount", "fenv_decay", "vel_to_cut"],
                ["nfilt_mode", "noise_filter", "nfilt_res", "nfilt_env_amount", "nfilt_env_decay", "nfilt_vel"]],
-    "FX": [["dist_drive", "dist_tone", "ring_mod", "fm_index", "comb", "gverb", "width", "delay_detune"],
-           ["delay_l", "delay_r", "delay_fb", "delay_wet", "delay_l_sync", "delay_r_sync"]],
+    "FX": [["dist_drive", "ring_mod", "ring_mix", "fm_index", "fm_mix", "comb", "comb_mix", "gverb"],
+           ["gverb_length", "width", "delay_detune", "delay_l", "delay_r", "delay_l_fb", "delay_r_fb",
+            "delay_wet"]],
     "LFO": [["lfo1_rate", "lfo1_depth", "lfo1_wave", "lfo1_dest", "lfo1_div", "lfo2_rate", "lfo2_depth",
              "lfo2_dest"]],
     "CTRL": [["base_note", "vel_to_vol", "vel_to_cut", "vel_to_noise", "vel_to_osc", "vel_to_penv", "out_pan",
