@@ -103,6 +103,40 @@ static void send_notes(int on, int n, int base) {
 
 typedef struct { const char *name; double mean, p99, max, bg; float peak; } Stage;
 
+/* 1.0.3: `-w` benches the worst-case FX preset (design §4). Parameters are found BY NAME (dispatcher op 8,
+ * effGetParamName) so the same binary runs against the 1.0.2 baseline .so, where the 1.0.3-only names are
+ * simply skipped. The preset is applied to all 12 voices, then VOICE returns to 1. */
+static int find_by_name(AEffect *f, const char *name)
+{
+    char buf[64];
+    for (int i = 0; i < f->numParams; i++) {
+        buf[0] = 0;
+        f->dispatcher(f, 8 /*effGetParamName*/, i, 0, buf, 0);
+        if (!strcmp(buf, name)) return i;
+    }
+    return -1;
+}
+
+static void worst_case(AEffect *f)
+{
+    static const struct { const char *name; float v; } P[] = {
+        {"DIST DRIVE", 1.0f}, {"DIST TONE", 1.0f}, {"RING MOD", 0.5f}, {"RING MIX", 1.0f},
+        {"FM INDEX", 0.5f}, {"FM MIX", 1.0f}, {"COMB", 0.25f}, {"COMB MIX", 1.0f},
+        {"GATED VERB", 1.0f}, {"GVERB LENGTH", 1.0f}, {"DELAY WET", 1.0f}, {"DELAY L", 0.5f},
+        {"DELAY R", 0.5f}, {"DELAY DETUNE", 0.5f}, {"DELAY L FB", 1.0f}, {"DELAY R FB", 1.0f},
+        {"WIDTH", 1.0f}, {"EQ GAIN", 0.5f}, {"EQ Q", 1.0f},
+    };
+    int vi = find_by_name(f, "VOICE");
+    for (int v = 0; v < 12; v++) {
+        if (vi >= 0) f->setParameter(f, vi, v / 11.0f);
+        for (size_t k = 0; k < sizeof P / sizeof P[0]; k++) {
+            int i = find_by_name(f, P[k].name);
+            if (i >= 0) f->setParameter(f, i, P[k].v);
+        }
+    }
+    if (vi >= 0) f->setParameter(f, vi, 0.0f);
+}
+
 /* mode: 0 idle, 1 chords of `voices`, 2 param sweep while holding 8 voices, 3 release tail */
 static Stage run(const char *name, int mode, int voices, double seconds) {
     int nblocks = (int)(seconds * SR / BLOCK);
@@ -149,15 +183,16 @@ static Stage run(const char *name, int mode, int voices, double seconds) {
 int main(int argc, char **argv) {
     const char *path = 0, *vlist = "1,4,8,16";
     double secs = 5;
-    int json = 0;
+    int json = 0, worst = 0;
     for (int i = 1; i < argc; i++) {
         if (!strcmp(argv[i], "-s") && i + 1 < argc) secs = atof(argv[++i]);
         else if (!strcmp(argv[i], "-v") && i + 1 < argc) vlist = argv[++i];
         else if (!strcmp(argv[i], "-p")) sweep_all = 1;
+        else if (!strcmp(argv[i], "-w")) worst = 1;
         else if (!strcmp(argv[i], "-j")) json = 1;
         else path = argv[i];
     }
-    if (!path) { fprintf(stderr, "usage: bench <plugin.so> [-s secs] [-v 1,4,8,16] [-p] [-j]\n"); return 2; }
+    if (!path) { fprintf(stderr, "usage: bench <plugin.so> [-s secs] [-v 1,4,8,16] [-p] [-w] [-j]\n"); return 2; }
     void *h = dlopen(path, RTLD_NOW | RTLD_LOCAL);
     if (!h) { fprintf(stderr, "dlopen: %s\n", dlerror()); return 1; }
     AEffect *(*entry)(hostcb) = (AEffect * (*)(hostcb)) dlsym(h, "VSTPluginMain");
@@ -176,13 +211,16 @@ int main(int argc, char **argv) {
     fx->dispatcher(fx, effStartProcess, 0, 0, 0, 0);
     double open_ms = (now_us(CLOCK_MONOTONIC) - o0) / 1e3;
     synth = (fx->flags & (1 << 8)) != 0;
+    if (worst) { worst_case(fx); printf("worst-case FX preset applied\n"); }
 
     printf("plugin %s: %s, %d params, open %.1f ms; block %d @ %d Hz = %.0f us budget\n", path,
            synth ? "instrument" : "effect", fx->numParams, open_ms, BLOCK, SR, BUDGET_US);
     Stage st[16];
     int ns = 0;
     st[ns++] = run("idle", 0, 0, secs);
-    if (synth) {
+    if (worst) {
+        st[ns++] = run("worst-case", 1, 12, secs);
+    } else if (synth) {
         char buf[64], *save = 0;
         strncpy(buf, vlist, sizeof buf - 1);
         for (char *v = strtok_r(buf, ",", &save); v && ns < 12; v = strtok_r(0, ",", &save)) {

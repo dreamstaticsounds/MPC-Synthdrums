@@ -312,8 +312,8 @@ static int get_param(void *p, const char *k, char *buf, int n)
                     return put(buf, n, st == 0 ? "OFF" : SD_DIV_WORDS[st - 1]);
                 }
                 if (j == P_GVERB_LENGTH) {
-                    /* the tap count, not the knob value (the same mapping voice.c uses): 0 -> 1 .. 127 -> 488 */
-                    snprintf(t, sizeof t, "%d", (int)(pow((double)v / 127.0, 2.0) * 487.0) + 1);
+                    /* the tap count, not the knob value (the same capped mapping voice.c uses): 0 -> 1 .. 127 -> 256 */
+                    snprintf(t, sizeof t, "%d", (int)(pow((double)v / 127.0, 2.0) * 127.0) + 1);
                     return put(buf, n, t);
                 }
                 if (j == P_LFO1_RATE || j == P_LFO2_RATE || j == P_LFO3_RATE) {

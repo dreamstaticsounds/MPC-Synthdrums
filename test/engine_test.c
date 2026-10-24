@@ -1008,9 +1008,9 @@ CHECK(s.nan == 0 && s.peak <= 32767 && s.peak > 24000, "12-voice sum loud and un
         sp(x, "gverb_length", 0);   E->get_param(x, "gverb_length_display", b, sizeof b);
         CHECK(!strcmp(b, "1"), "gverb length 0 shows 1 tap (%s)", b);
         sp(x, "gverb_length", 64);  E->get_param(x, "gverb_length_display", b, sizeof b);
-        CHECK(!strcmp(b, "124"), "gverb length 64 shows 124 (%s)", b);
+        CHECK(!strcmp(b, "33"), "gverb length 64 shows 33 (%s)", b);
         sp(x, "gverb_length", 127); E->get_param(x, "gverb_length_display", b, sizeof b);
-        CHECK(!strcmp(b, "488"), "gverb length 127 shows 488 (%s)", b);
+        CHECK(!strcmp(b, "128"), "gverb length 127 shows 128 (%s)", b);
         /* per-hit determinism at the max length: two hits bit-identical (rings + figure reset) */
         sp(x, "gverb", 64);
         note(x, 36, 127); cap(x, A, 128);

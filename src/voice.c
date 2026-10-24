@@ -393,11 +393,12 @@ void sd_voice_render(Voice *v, float *bus, int frames, float bpm)
     const float fm_mix = knob01(PP(P_FM_MIX));
     const float comb_mix = knob01(PP(P_COMB_MIX));
     const float gverb_m = PP(P_GVERB) * (1.0f / 127.0f);
-    /* the gated verb's length (1.0.3, design §4): the knob maps to BA3's tap count, exactly the
-     * vendor's (int)(pow(B,2)*487)+1 with B = knob/127 -- 0 -> 1 tap (the 1.0.2 sound, bit-
-     * identical), 127 -> 488. Double math; the same expression prints the readout in synth.c's
-     * `_display` (keep the two in sync). */
-    const int gverb_len = (int)(pow((double)PP(P_GVERB_LENGTH) / 127.0, 2.0) * 487.0) + 1;
+    /* the gated verb's length (1.0.3, design §4): the knob maps to BA3's tap count, the vendor's
+     * (int)(pow(B,2)*487)+1 with B = knob/127 -- 0 -> 1 tap (the 1.0.2 sound, bit-identical). The
+     * top is capped at 256 taps (not 488): the worst-case bench at 488 exceeded a block on x86
+     * (p99 70.8% vs the 1.0.2 baseline's 16.2%), so 127 -> 128 (design §4 escape hatch). Double
+     * math; the same expression prints the readout in synth.c's `_display` (keep the two in sync). */
+    const int gverb_len = (int)(pow((double)PP(P_GVERB_LENGTH) / 127.0, 2.0) * 127.0) + 1;
     /* The stereo widener knob (1.0.2): 0 = the stage is skipped entirely (exact bypass). */
     const float width01 = PP(P_WIDTH) * (1.0f / 127.0f);
     /* The stereo delay (spec §8, LAST in the chain): the two times (1..1000 ms, a log knob -- the
