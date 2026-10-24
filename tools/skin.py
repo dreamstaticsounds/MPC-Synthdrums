@@ -210,10 +210,20 @@ def momentary(pg, key, rect, word, px=16, arrow=None):
     pg.add("key", key, rect, word=word, px=px, colour=ACCENT, arrow=arrow)
 
 
+def draw_field(pg, rect):
+    """the closed field's own art, baked into the page background (1.0.3, design §7): an unlit rounded
+    border and a dim chevron at the right; the value text is the live label"""
+    x, y, w, h = rect
+    rrect(pg, (x, y, w, h), outline=(140, 136, 132), width=2)
+    cx, cy = x + w - 18, y + h / 2
+    pg.d.line([(cx - 6, cy - 3), (cx, cy + 3), (cx + 6, cy - 3)], fill=(140, 136, 132), width=2)
+
+
 def popup(pg, key, rect, cols):
-    """a field that opens the option list on tap (mpc-vst-plugins' popup control, docs/NOTES.md): build_page
-    makes the field a key on the hidden "<key>__open" param plus the enum's own value label, and the list
-    itself option keys shown only while that flag is on (IndexedEnabling), on top of the page"""
+    """a field that opens the option list on tap (1.0.3: the framework's popup widget, design §7): the
+    field def maps Data to the hidden "<key>__open" flag and its "Text" handle to the enum itself, so the
+    list stays open until a pick; its art is baked here, the list on top of the page"""
+    draw_field(pg, rect)
     pg.add("popup", key, rect, cols=cols)
 
 
@@ -582,7 +592,8 @@ KNOB_ACTIONS = [action("Mouse Down", "Q-Link"), action("Double Click", "Show Ove
                 action("Enter Pressed", "Show Overlay", "knob overlay")]
 KEY_ACTIONS = [action("Mouse Down", "Q-Link"), action("Enter Pressed", "Toggle Switch")]
 RADIO_ACTIONS = [action("Mouse Down", "Q-Link")]
-FIELD_ACTIONS = [action("Mouse Down", "Toggle Switch")]   # one toggle per tap (1.0.2): a press+enter
+FIELD_ACTIONS = [action("Mouse Down", "Toggle Switch"),     # the framework's own popup widget (PolyForce
+                  action("Enter Pressed", "Toggle Switch")]   # shPopField / shadow_skin.py ~1041): two toggles
 # pair must not fire twice -- that opened the list and instantly closed it again
 
 
@@ -606,21 +617,26 @@ def button(on_img, off_img, bid, n, w, h):
                bounds_s(0, 0, w, h))
 
 
-def value_label(w, h, px, colour=LCD_INK, left=False):
+def value_label(w, h, px, colour=LCD_INK, left=False, handle="Data", bounds=None):
     return sub("Value", "Label", {"version": 1, "textStyle": {
         "version": 1, "font": {"version": 1, "name": "Titillium Web", "style": "Bold", "height": px},
         "colour": "ff" + colour,
         "justification": ("left" if left else "horizontallyCentred") + " verticallyCentred", "case": "Original"},
-        "type": "Value", "handleName": "Data"}, bounds_s(10 if left else 0, 0, w - (10 if left else 0), h))
+        "type": "Value", "handleName": handle},
+        bounds if bounds is not None else bounds_s(10 if left else 0, 0, w - (10 if left else 0), h))
 
 
-def placed(dkey, name, index, rect, focus_on=True, only=None):
+def placed(dkey, name, index, rect, focus_on=True, only=None, extra=None):
     """a placed component on the "Data" handle; only=<param> makes it visible while that parameter is on
-    (IndexedEnabling, the mechanism popups and mode panels use: docs/NOTES.md)"""
+    (IndexedEnabling, the mechanism popups and mode panels use: docs/NOTES.md); extra={handle: param_index}
+    adds more mapped handles (the picker field's "Text" -> the enum's own parameter)"""
     x, y, w, h = rect
+    map_ = [{"key": "Data", "value": "Parameter %d" % index}]
+    for hk, hv in (extra or {}).items():
+        map_.append({"key": hk, "value": "Parameter %d" % hv})
     return {"version": 2,
             "componentData": {"version": 1, "name": name, "type": dkey, "data": {"version": 1, "handleName": "Data"}},
-            "handle remapping": {"version": 1, "map": [{"key": "Data", "value": "Parameter %d" % index}]},
+            "handle remapping": {"version": 1, "map": map_},
             "bounds": {"version": 2, "acceptsHWFocus": "Yes" if focus_on else "No",
                        "showWhenDataModelInvalid": "Show" if only else "Hide",
                        "whenVisible": "Always", "boundsType": "Absolute", "bounds": bounds_s(x, y, w, h),
@@ -704,20 +720,16 @@ def build_page(pg, tab, sv, defs, cache):
         elif c["kind"] == "popup":
             n = len(PBYKEY[key]["options"])
             oi, ei = OPEN_INDEX[key], INDEX[key]
-            # the field: a key on the hidden "__open" param (a tap toggles the list; lit while it is open),
-            # with the enum's chosen option beside the drop-down chevron; its art is a transparent window
-            # placed AFTER the label, so it sits on top and the whole rect takes the touch (1.0.2)
-            f = dict(rect=c["rect"], key=key, word="", px=16, colour=ACCENT, chev=True, field=True)
-            off, on = key_pics(pg.bg, f)
-            on_n = sv.save(on, "sd_%s_key_%s_on.png" % (t, key))
-            off_n = sv.save(off, "sd_%s_key_%s_off.png" % (t, key))
-            dkey = "sdKey_%s_%s" % (t, key)
-            add_def(dkey, FIELD_ACTIONS, [focus(w, h), button(on_n, off_n, 1, 1, w, h)])
-            vw = w - 40
-            vdkey = "sdValue_%d_%d_24_1" % (vw, h)
-            add_def(vdkey, [], [value_label(vw, h, 24, left=True)], ignore=True)
-            kids.append(placed(vdkey, key + " value", ei, (x, y, vw, h), False))
-            kids.append(placed(dkey, key + " field", oi, c["rect"], True))   # later in kids = on top
+            # the field (1.0.3, design §7): the framework's own popup widget (PolyForce shPopField /
+            # shadow_skin.py) -- two Toggle Switch actions, Focus + the enum's value label as a sub on
+            # its "Text" handle, NO Button (a Button double-fires the actions: open, then instantly
+            # shut). The border + chevron are already in pg.bg (popup() drew them); the list panel
+            # below is unchanged -- option keys shown while the hidden "__open" flag is on, on top
+            dkey = "sdField_%s_%s" % (t, key)
+            add_def(dkey, FIELD_ACTIONS, [focus(w, h),
+                                          value_label(w, h, 24, left=True, handle="Text",
+                                                      bounds=bounds_s(8, 0, w - 44, h))])
+            kids.append(placed(dkey, key, oi, c["rect"], extra={"Text": ei}))
             # the list: one radio group on the enum, on top of the page and visible only while the flag is
             # on, so the open list takes the touch over whatever is under it and a pick closes it
             cols, cw = POPUP_COLS[key]
@@ -839,8 +851,6 @@ def preview(out_dir):
                 off, on = key_pics(pg.bg, c)
                 img.alpha_composite(on if PBYKEY[key].get("default", 0) and PBYKEY[key].get("options") else off, (x, y))
             elif c["kind"] == "popup":   # the field, closed: the list only exists on the device (IndexedEnabling)
-                off, on = key_pics(pg.bg, dict(rect=c["rect"], word="", px=16, colour=ACCENT, chev=True))
-                img.alpha_composite(off, (x, y))
                 f = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", R(24 * 0.72))
                 d.text((x + 10, y + h / 2), default_text(key), font=f, fill="#" + LCD_INK, anchor="lm")
             elif c["kind"] == "value":

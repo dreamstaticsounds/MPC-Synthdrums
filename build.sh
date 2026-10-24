@@ -29,6 +29,7 @@ SHADOW_ART="$PWD/build/tools/shadow_art" \
   python3 "$MPC_VST/tools/gen_vst.py" vst.json 2>&1 | grep -v -e "TOUCH" -e "EDGE" || true
 [ -f build/params.h ] && [ -d "build/skin/$NAME/Plugin Skins" ]
 python3 tools/skin.py "build/skin/$NAME/Plugin Skins"          # the six pages
+python3 tools/field_check.py "build/skin/$NAME"                  # the picker field structure (1.0.3)
 # touch boxes, edges, Q-Links, as MPC loads it. skin_check exits 1 whenever it reports anything, and the
 # by-design popup TOUCH lines are among them, so exit status alone can't gate. Two real guards instead:
 # a crash (traceback on stderr) must fail loudly, and only the by-design TOUCH-on-a-popup-row lines are
