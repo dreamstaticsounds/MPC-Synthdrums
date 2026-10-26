@@ -254,9 +254,9 @@ def osc_page():
     # row 1: SOURCE | OSCILLATOR | the voice-editing keys (a Q-Link press must never fire these, so
     # they stay out of QLINK_BANKS)
     panel(pg, (16, 48, 216, 252), "SOURCE")
-    knob(pg, "src_mix", 124, 185, 76, "SRC OSC/NOISE", label_w=200)
+    knob(pg, "src_mix", 124, 185, 76, "OSC/NOISE", label_w=200)
     panel(pg, (244, 48, 560, 252), "OSCILLATOR")
-    knob_row(pg, [("osc_decay", "OSC DECAY"), ("osc_shape", "OSC SHAPE"), ("osc_xmod", "OSC X-MOD")], 260, 185, 528)
+    knob_row(pg, [("osc_decay", "DECAY"), ("osc_shape", "SHAPE"), ("osc_xmod", "X-MOD")], 260, 185, 528)
     panel(pg, (816, 48, 448, 252), "VOICE MANAGEMENT")
     momentary(pg, "voice_init", (832, 160, 180, 62), "INIT VOICE", 20)
     momentary(pg, "voice_copy", (1020, 160, 110, 62), "COPY", 20)
@@ -264,8 +264,8 @@ def osc_page():
     text(pg, (1040, 258), "EDITS THE SELECTED VOICE", 16, INK_DIM)
     # row 2: NOISE (moved here from the PITCH page; noise_filter joins the FILTER page)
     panel(pg, (16, 316, 1248, 296), "NOISE")
-    knob_row(pg, [("noise_colour", "NOISE COLOUR"), ("noise_attack", "NOISE ATTACK"),
-                  ("noise_decay", "NOISE DECAY"), ("noise_shape", "NOISE SHAPE")], 16, 475, 1248)
+    knob_row(pg, [("noise_colour", "COLOUR"), ("noise_attack", "ATTACK"),
+                  ("noise_decay", "DECAY"), ("noise_shape", "SHAPE")], 16, 475, 1248)
     return pg
 
 
@@ -274,8 +274,8 @@ def pitch_page():
     text(pg, (1272, 27), "PITCH", 20, INK_DIM, "rm")
     # one section per page: its six knobs at full size, centered in the whole page
     panel(pg, (16, 48, 1248, 564), "PITCH")
-    knob_row(pg, [("pitch", "PITCH"), ("pitch_track", "KEY TRACK"), ("penv_attack", "P.ENV ATTACK"),
-                   ("penv_decay", "P.ENV DECAY"), ("penv_shape", "P.ENV SHAPE"), ("penv_amount", "P.ENV AMOUNT")],
+    knob_row(pg, [("pitch", "PITCH"), ("pitch_track", "TRACK"), ("penv_attack", "ATTACK"),
+                   ("penv_decay", "DECAY"), ("penv_shape", "SHAPE"), ("penv_amount", "AMOUNT")],
              16, 337, 1248, 86)
     return pg
 
@@ -286,14 +286,14 @@ def filter_page():
     # the oscillator filter: mode keys share the title band, its five knobs span the panel
     panel(pg, (16, 48, 724, 272), "OSC FILTER")
     radio(pg, "filter_mode", [(206 + 84 * i, 54, 76, 44) for i in range(3)], gen_params.FILTER_MODES, "key", 17)
-    knob_row(pg, [("filter_cutoff", "CUTOFF"), ("filter_res", "RES"), ("fenv_amount", "F.ENV AMOUNT"),
-                  ("fenv_decay", "F.ENV DECAY"), ("vel_to_cut", "VEL→CUT")], 32, 204, 700, lcd_w=112)
+    knob_row(pg, [("filter_cutoff", "CUTOFF"), ("filter_res", "RES"), ("fenv_amount", "ENV DEPTH"),
+                  ("fenv_decay", "DECAY"), ("vel_to_cut", "Velocity")], 32, 204, 700, lcd_w=112)
     # the noise branch's own filter, same shape; its readouts are kHz too
     panel(pg, (16, 336, 724, 272), "NOISE FILTER")
     radio(pg, "nfilt_mode", [(206 + 84 * i, 342, 76, 44) for i in range(3)], gen_params.FILTER_MODES, "key", 17)
-    knob_row(pg, [("noise_filter", "NOISE CUTOFF"), ("nfilt_res", "N.FILTER RES"),
-                  ("nfilt_env_amount", "N.FENV AMOUNT"), ("nfilt_env_decay", "N.FENV DECAY"),
-                  ("nfilt_vel", "N.FILTER VEL")], 32, 492, 700, lcd_w=112)
+    knob_row(pg, [("noise_filter", "CUTOFF"), ("nfilt_res", "RES"),
+                  ("nfilt_env_amount", "ENV DEPTH"), ("nfilt_env_decay", "DECAY"),
+                  ("nfilt_vel", "Velocity")], 32, 492, 700, lcd_w=112)
     # the stutter, stacked in a narrow strip beside them
     panel(pg, (752, 48, 124, 564), "STUTTER")
     knob(pg, "stutter_length", 814, 259, 76, "STUTTER RATE", label_w=112)
@@ -322,18 +322,18 @@ def fx_page():
     panel(pg, (772, 48, 240, 191), "COMB FLTR")
     knob_row(pg, [("comb", "TIME"), ("comb_mix", "MIX")], 772, 155, 240, lcd_w=96)
     panel(pg, (1024, 48, 240, 191), "GATED VERB")
-    knob_row(pg, [("gverb", "WET MIX"), ("gverb_length", "LENGTH")], 1024, 155, 240, lcd_w=96)
+    knob_row(pg, [("gverb_length", "LENGTH"), ("gverb", "MIX")], 1024, 155, 240, lcd_w=96)
     # the delay row (design §1-§3): RESET above the detune, L SYNC above the L knob, R SYNC above
     # the R knob, then the six knobs (detune, L, R, L FB, R FB, wet); the widener (the chain's
     # last stage) keeps the right end of the row
     panel(pg, (16, 255, 1000, 357), "DELAY")
-    momentary(pg, "fx_reset", (40, 330, 118, 44), "RESET", 16)
-    text(pg, (266, 312), "L SYNC")
+    momentary(pg, "fx_reset", (40, 330, 118, 44), "FX RESET", 16)
+    text(pg, (266, 312), "SYNC L")
     radio(pg, "delay_l_sync", [(187, 330, 79, 44), (266, 330, 79, 44)], ["OFF", "ON"], "key", 17)
-    text(pg, (433, 312), "R SYNC")
+    text(pg, (433, 312), "SYNC R")
     radio(pg, "delay_r_sync", [(354, 330, 79, 44), (433, 330, 79, 44)], ["OFF", "ON"], "key", 17)
-    knob_row(pg, [("delay_detune", "DELAY DETUNE"), ("delay_l", "DELAY L"), ("delay_r", "DELAY R"),
-                  ("delay_l_fb", "DELAY L FB"), ("delay_r_fb", "DELAY R FB"), ("delay_wet", "DELAY WET")],
+    knob_row(pg, [("delay_detune", "DETUNE"), ("delay_l", "TIME L"), ("delay_r", "TIME R"),
+                  ("delay_l_fb", "FEEDBACK L"), ("delay_r_fb", "FEEDBACK R"), ("delay_wet", "MIX")],
              16, 448, 1000, lcd_w=104)
     panel(pg, (1028, 255, 236, 357), "WIDENER")
     knob(pg, "width", 1146, 448, 112, "WIDTH", lcd_rect=(1098, 512, 96, 30))
@@ -411,8 +411,8 @@ QLINK_BANKS = {
     "PITCH": [["pitch", "pitch_track", "penv_attack", "penv_decay", "penv_shape", "penv_amount"]],
     "FILTER": [["filter_mode", "filter_cutoff", "filter_res", "fenv_amount", "fenv_decay", "vel_to_cut"],
                ["nfilt_mode", "noise_filter", "nfilt_res", "nfilt_env_amount", "nfilt_env_decay", "nfilt_vel"]],
-    "FX": [["dist_drive", "ring_mod", "ring_mix", "fm_index", "fm_mix", "comb", "comb_mix", "gverb"],
-           ["gverb_length", "width", "delay_detune", "delay_l", "delay_r", "delay_l_fb", "delay_r_fb",
+    "FX": [["dist_drive", "ring_mod", "ring_mix", "fm_index", "fm_mix", "comb", "comb_mix", "gverb_length"],
+           ["gverb", "width", "delay_detune", "delay_l", "delay_r", "delay_l_fb", "delay_r_fb",
             "delay_wet"]],
     "LFO": [["lfo1_rate", "lfo1_depth", "lfo1_wave", "lfo1_dest", "lfo1_div", "lfo2_rate", "lfo2_depth",
              "lfo2_dest"]],
