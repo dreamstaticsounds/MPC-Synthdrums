@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
-"""MPC Synthdrums' six pages: their geometry, their artwork and every control in MPC's skin (TUI.json).
+"""MPC Synthdrums' seven pages: their geometry, their artwork and every control in MPC's skin (TUI.json).
 
     python3 tools/skin.py --layout              writes layout.conf (the tabs and their Q-Links, for mpc-vst-plugins)
     python3 tools/skin.py "<skin>/Plugin Skins" builds the pages into the skin gen_vst.py made from layout.conf
     python3 tools/skin.py --preview DIR         draws each page with its controls at their defaults (offline check)
 
 Pages (1280 x 628, MPC's whole plugin area): OSC, PITCH, FILTER, FX (the four voice pages), LFO (the three
-per-voice modulators) and CTRL (the global page). Each page shows only its right-aligned name: hitting a pad
+per-voice modulators), MASTER (the 12-fader mixer and the master EQ, 1.1.0) and CTRL (the global page). Each page shows only its right-aligned name: hitting a pad
 selects that voice for editing (and plays it), so the old VOICE selector strip (segments, name, TRIG) is gone
 and its space goes to bigger controls. The panels carry the original DSK SynthDrums' sections in the
 original's order, with the original's short labels.
@@ -58,7 +58,7 @@ KNOB_FRAMES = 128
 KNOB_SPAN = 150
 MAX_STRIP = 12288
 
-TABS = ["OSC", "PITCH", "FILTER", "FX", "LFO", "CTRL"]
+TABS = ["OSC", "PITCH", "FILTER", "FX", "LFO", "MASTER", "CTRL"]
 PARAMS = gen_params.PARAMS
 INDEX = {p["key"]: i for i, p in enumerate(PARAMS)}
 PBYKEY = {p["key"]: p for p in PARAMS}
@@ -174,9 +174,9 @@ def knob(pg, key, cx, cy, size, label=None, endless=False, lcd_rect=None, label_
         value(pg, key, lcd_rect)
 
 
-def value(pg, key, rect):
+def value(pg, key, rect, px=24):
     lcd(pg, rect)
-    pg.add("value", key, rect)
+    pg.add("value", key, rect, px=px)
 
 
 CAP_COLOURS = {"white": ((236, 234, 228), (25, 25, 25)), "grey": ((172, 172, 170), (25, 25, 25)),
@@ -359,6 +359,44 @@ def lfo_page():
     return pg
 
 
+def master_page():
+    """the MASTER tab (1.1.0 design §5): the 12-fader mixer (two rows of six -- a small pan knob
+    above each fader, the fader labelled by voice number) and the three-band master EQ. The
+    geometry is the approved mockup's (mockups/master-tab.jpg, from mockups/draw_master_tab.py)."""
+    pg = Page("MASTER")
+    text(pg, (1272, 27), "MASTER", 20, INK_DIM, "rm")
+    # MIXER: six columns, two rows; a small PAN knob above each fader (mixer-scale: 36 px, 12 px
+    # type), both readouts the compact 44x20 window, the freed height going to the fader's travel
+    # (caps stay the standard 44 px), the fader labelled by voice number
+    panel(pg, (16, 48, 856, 564), "MIXER")
+    step = 824 / 6.0
+    rows = ((94, 128, 160, 185, 345),   # row 1: PAN label y, pan knob cy, pan lcd y, fader top/bottom
+            (358, 392, 424, 449, 607))  # row 2
+    for row, (lab, pcy, ply, ftop, fbot) in enumerate(rows):
+        for col in range(6):
+            n = row * 6 + col + 1
+            cx = 32 + step * (col + 0.5)
+            fit_text(pg, (cx - 50, lab - 8, 100, 16), "PAN", 12, INK)
+            knob(pg, "mix_pan_%d" % n, cx, pcy, 36, None, lcd_rect=False)
+            lcd(pg, (cx - 22, ply, 44, 20))
+            value(pg, "mix_pan_%d" % n, (cx - 22, ply, 44, 20), px=13)
+            fit_text(pg, (cx - 32, ftop, 64, 20), str(n), 16, INK)
+            lcd(pg, (cx - 22, ftop + 22, 44, 20))
+            value(pg, "mix_vol_%d" % n, (cx - 22, ftop + 22, 44, 20), px=13)
+            y0 = ftop + 47
+            slot(pg, cx, y0, fbot, False)
+            pg.add("slider", "mix_vol_%d" % n, (cx - 30, y0 - 2, 60, fbot - y0 + 4),
+                   cap="white", cap_w=44)
+    # MASTER EQ: three rows like the Filter tab's EQ -- high shelf / parametric / low shelf
+    panel(pg, (888, 48, 376, 564), "MASTER EQ")
+    for j, (pre, words) in enumerate((("meq_hi_", ("HIGH FREQ", "HIGH GAIN", "HIGH Q")),
+                                      ("meq_", ("EQ FREQ", "EQ GAIN", "EQ Q")),
+                                      ("meq_lo_", ("LOW FREQ", "LOW GAIN", "LOW Q")))):
+        knob_row(pg, [(pre + s, w) for s, w in zip(("freq", "gain", "q"), words)],
+                 888, 170 + 171 * j, 376, lcd_w=112)
+    return pg
+
+
 def glb_page():
     pg = Page("CTRL")
     text(pg, (1272, 27), "CTRL", 20, INK_DIM, "rm")
@@ -391,7 +429,7 @@ def glb_page():
     return pg
 
 
-PAGES = [osc_page, pitch_page, filter_page, fx_page, lfo_page, glb_page]
+PAGES = [osc_page, pitch_page, filter_page, fx_page, lfo_page, master_page, glb_page]
 
 # The LFO option params open as pickers (design §8; mpc-vst-plugins docs/NOTES.md "popups"): a field bound to
 # a hidden "<key>__open" wrapper param that gen_vst's shadow_skin.popup_params() appends after this port's own
@@ -416,6 +454,16 @@ QLINK_BANKS = {
             "delay_wet"]],
     "LFO": [["lfo1_rate", "lfo1_depth", "lfo1_wave", "lfo1_dest", "lfo1_div", "lfo2_rate", "lfo2_depth",
              "lfo2_dest"]],
+    # MASTER (1.1.0 design §2): five banks, mixer column-pairs first, then the nine EQ knobs
+    "MASTER": [["mix_vol_1", "mix_pan_1", "mix_vol_2", "mix_pan_2", "mix_vol_3", "mix_pan_3",
+                "mix_vol_4", "mix_pan_4"],
+               ["mix_vol_5", "mix_pan_5", "mix_vol_6", "mix_pan_6", "mix_vol_7", "mix_pan_7",
+                "mix_vol_8", "mix_pan_8"],
+               ["mix_vol_9", "mix_pan_9", "mix_vol_10", "mix_pan_10", "mix_vol_11", "mix_pan_11",
+                "mix_vol_12", "mix_pan_12"],
+               ["meq_hi_freq", "meq_hi_gain", "meq_hi_q", "meq_freq", "meq_gain", "meq_q",
+                "meq_lo_freq", "meq_lo_gain"],
+               ["meq_lo_q"]],
     "CTRL": [["base_note", "vel_to_vol", "vel_to_cut", "vel_to_noise", "vel_to_osc", "vel_to_penv", "out_pan",
               "out_vol"]],
 }
@@ -428,7 +476,7 @@ def qlink_banks(tab):
 
 def layout_conf():
     L = ["# MPC Synthdrums -- page layout (mpc-vst-plugins layout.conf syntax: tools/shadow_skin.py).",
-         "# GENERATED by tools/skin.py --layout: edit that. tools/skin.py then builds every control of the six pages.",
+         "# GENERATED by tools/skin.py --layout: edit that. tools/skin.py then builds every control of the seven pages.",
          "theme_bg=121212", "theme_panel=121212", "theme_ink=f0eeea", "theme_ink_dim=bebab6", "theme_accent=5a2494",
          "theme_knob_ring=5a2494", "theme_seg_active=5a2494", ""]
     popups = []
