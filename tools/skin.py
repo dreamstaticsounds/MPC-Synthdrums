@@ -410,17 +410,15 @@ def glb_page():
     knob_row(pg, [("base_note", "BASE NOTE"), ("vel_to_vol", "VEL→VOL"), ("vel_to_cut", "VEL→CUT"),
                   ("vel_to_noise", "VEL→NOISE"), ("vel_to_osc", "VEL→OSC"), ("vel_to_penv", "VEL→P.ENV")],
              370, 162, 886)
-    # KIT / OUTPUT / CHOKE / ABOUT across the bottom row
-    panel(pg, (16, 269, 220, 343), "KIT")
-    momentary(pg, "kit_init", (40, 397, 172, 62), "KIT INIT", 20)
-    text(pg, (126, 499), "RESET ALL 12 VOICES", 16, INK_DIM)
-    panel(pg, (248, 269, 380, 343), "OUTPUT")
-    radio(pg, "out_sel", [(264, 387 + 48 * i, 100, 44) for i in range(3)], gen_params.OUT_SELS, "key", 17)
-    knob_row(pg, [("out_pan", "PAN"), ("out_vol", "VOL")], 380, 452, 220)
-    panel(pg, (640, 269, 354, 343), "CHOKE")
-    radio(pg, "choke", [(656, 315 + 48 * i, 322, 44) for i in range(5)], gen_params.CHOKE_NAMES, "key", 17)
-    text(pg, (817, 570), "RETRIGGERING A VOICE", 15, INK_DIM)
-    text(pg, (817, 590), "SILENCES ITS GROUP", 15, INK_DIM)
+    # KIT / CHOKE / ABOUT across the bottom row (1.1.0: the OUTPUT section is gone -- the MASTER
+    # tab's mixer owns vol/pan now -- so KIT and CHOKE widen into its place)
+    panel(pg, (16, 269, 371, 343), "KIT")
+    momentary(pg, "kit_init", (115, 397, 172, 62), "KIT INIT", 20)
+    text(pg, (201, 499), "RESET ALL 12 VOICES", 16, INK_DIM)
+    panel(pg, (399, 269, 595, 343), "CHOKE")
+    radio(pg, "choke", [(536, 315 + 48 * i, 322, 44) for i in range(5)], gen_params.CHOKE_NAMES, "key", 17)
+    text(pg, (697, 570), "RETRIGGERING A VOICE", 15, INK_DIM)
+    text(pg, (697, 590), "SILENCES ITS GROUP", 15, INK_DIM)
     panel(pg, (1006, 269, 258, 343), "ABOUT")
     about = ["MPC SYNTHDRUMS", "12-VOICE SYNTH DRUM BOX", "DREAM STATIC SOUNDS",
              "INSPIRED BY DSK SYNTHDRUMS", "NOT AFFILIATED WITH DSK MUSIC", "VERSION 1.0.3"]
@@ -464,8 +462,9 @@ QLINK_BANKS = {
                ["meq_hi_freq", "meq_hi_gain", "meq_hi_q", "meq_freq", "meq_gain", "meq_q",
                 "meq_lo_freq", "meq_lo_gain"],
                ["meq_lo_q"]],
-    "CTRL": [["base_note", "vel_to_vol", "vel_to_cut", "vel_to_noise", "vel_to_osc", "vel_to_penv", "out_pan",
-              "out_vol"]],
+    # CTRL (1.1.0): the OUTPUT controls moved to the MASTER tab's mixer, so the bank shrinks to
+    # the base note and the five velocity routings
+    "CTRL": [["base_note", "vel_to_vol", "vel_to_cut", "vel_to_noise", "vel_to_osc", "vel_to_penv"]],
 }
 
 
