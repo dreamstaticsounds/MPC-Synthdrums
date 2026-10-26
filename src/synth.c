@@ -453,41 +453,43 @@ static void render(void *p, int16_t *out, int frames)
     }
     /* The master EQ (1.1.0 design §4): three bands on the summed bus, coefficients once per block
      * (mirroring voice.c's per-block eq_set), per channel, each band skipped ENTIRELY at gain 0
-     * (exact bypass -- never stepped with a neutral coefficient, so flat output ≡ 1.0.3). The
-     * knob->value expressions mirror voice.c's eq_hz/eq_db/eq_q -- keep in sync. */
+     * (exact bypass -- never stepped with a neutral coefficient, so flat output ≡ 1.0.3), and an
+     * off band's state parked at zero so re-engaging never steps stale history out as a click.
+     * The knob->value expressions mirror voice.c's eq_hz/eq_db/eq_q -- keep in sync. */
     {
-        const float gh = s->meq[P_MEQ_HI_GAIN - P_MEQ_HI_FREQ];
-        const float gm = s->meq[P_MEQ_GAIN - P_MEQ_HI_FREQ];
-        const float gl = s->meq[P_MEQ_LO_GAIN - P_MEQ_HI_FREQ];
-        if (gh != 0.0f || gm != 0.0f || gl != 0.0f) {
-            const float kf[3] = { s->meq[0], s->meq[3], s->meq[6] };   /* freqs: offsets 0/3/6 */
-            const float kq[3] = { s->meq[2], s->meq[5], s->meq[8] };   /* qs:    offsets 2/5/8 */
-            const float kg[3] = { gh, gm, gl };
-            for (n = 0; n < 3; n++) {
-                float hz, db, qq;
-                if (kg[n] == 0.0f) continue;
-                hz = 40.0f * powf(300.0f, kf[n] * (1.0f / 127.0f));
-                db = kg[n] * (18.0f / 63.0f);
-                qq = 0.5f * powf(12.0f, kq[n] * (1.0f / 127.0f));
-                if (n == 0) {
-                    eq_set_high_shelf(&s->meq_hs[0], hz, db, qq);
-                    eq_set_high_shelf(&s->meq_hs[1], hz, db, qq);
-                } else if (n == 1) {
-                    eq_set(&s->meq_pk[0], hz, db, qq);
-                    eq_set(&s->meq_pk[1], hz, db, qq);
-                } else {
-                    eq_set_low_shelf(&s->meq_ls[0], hz, db, qq);
-                    eq_set_low_shelf(&s->meq_ls[1], hz, db, qq);
-                }
+        const float kg[3] = { s->meq[P_MEQ_HI_GAIN - P_MEQ_HI_FREQ],
+                              s->meq[P_MEQ_GAIN - P_MEQ_HI_FREQ],
+                              s->meq[P_MEQ_LO_GAIN - P_MEQ_HI_FREQ] };
+        const float kf[3] = { s->meq[0], s->meq[3], s->meq[6] };   /* freqs: offsets 0/3/6 */
+        const float kq[3] = { s->meq[2], s->meq[5], s->meq[8] };   /* qs:    offsets 2/5/8 */
+        PeakEQ *const pair[3] = { s->meq_hs, s->meq_pk, s->meq_ls };
+        for (n = 0; n < 3; n++) {
+            float hz, db, qq;
+            if (kg[n] == 0.0f) {
+                memset(pair[n], 0, 2 * sizeof(PeakEQ));   /* off: bypass + park zeroed (no click on re-engage) */
+                continue;
+            }
+            hz = 40.0f * powf(300.0f, kf[n] * (1.0f / 127.0f));
+            db = kg[n] * (18.0f / 63.0f);
+            qq = 0.5f * powf(12.0f, kq[n] * (1.0f / 127.0f));
+            if (n == 0) {
+                eq_set_high_shelf(&pair[n][0], hz, db, qq);
+                eq_set_high_shelf(&pair[n][1], hz, db, qq);
+            } else if (n == 1) {
+                eq_set(&pair[n][0], hz, db, qq);
+                eq_set(&pair[n][1], hz, db, qq);
+            } else {
+                eq_set_low_shelf(&pair[n][0], hz, db, qq);
+                eq_set_low_shelf(&pair[n][1], hz, db, qq);
             }
         }
         for (i = 0; i < frames; i++) {
             float xl = acc[2 * i] * MASTER_GAIN;
             float xr = acc[2 * i + 1] * MASTER_GAIN;
             int16_t yl, yr;
-            if (gh != 0.0f) { xl = eq_step(&s->meq_hs[0], xl); xr = eq_step(&s->meq_hs[1], xr); }
-            if (gm != 0.0f) { xl = eq_step(&s->meq_pk[0], xl); xr = eq_step(&s->meq_pk[1], xr); }
-            if (gl != 0.0f) { xl = eq_step(&s->meq_ls[0], xl); xr = eq_step(&s->meq_ls[1], xr); }
+            if (kg[0] != 0.0f) { xl = eq_step(&pair[0][0], xl); xr = eq_step(&pair[0][1], xr); }
+            if (kg[1] != 0.0f) { xl = eq_step(&pair[1][0], xl); xr = eq_step(&pair[1][1], xr); }
+            if (kg[2] != 0.0f) { xl = eq_step(&pair[2][0], xl); xr = eq_step(&pair[2][1], xr); }
             if (!isfinite(xl)) { xl = 0.0f; s->nan_count++; }   /* a NaN would be undefined behaviour here */
             if (!isfinite(xr)) { xr = 0.0f; s->nan_count++; }
             xl = xl / (1.0f + fabsf(xl));                        /* the master soft clip */

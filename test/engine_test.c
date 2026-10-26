@@ -1236,6 +1236,22 @@ CHECK(s.nan == 0 && s.peak <= 32767 && s.peak > 24000, "12-voice sum loud and un
         sp(x, "kit_init", 1); sp(x, "kit_init", 0); sp(x, "voice", 0);
     }
 
+    /* ---- 1.1.0 final fix: a band parked at 0 must not step stale history when re-engaged ---- */
+    {
+        sp(x, "kit_init", 1); sp(x, "kit_init", 0);
+        sp(x, "meq_hi_gain", 63);
+        note(x, 36, 127);
+        run(x, 10);                      /* the band sees a real signal: its state loads */
+        sp(x, "meq_hi_gain", 0);         /* bypass: freeze the state mid-signal ... */
+        sp(x, "mix_vol_1", 0);           /* ... and silence the bus input exactly */
+        run(x, 3);
+        sp(x, "meq_hi_gain", 63);        /* re-engage in silence */
+        { Stat s = run(x, 10);
+          CHECK(s.peak == 0, "re-engaged band starts from zero state, no stale click (peak %d)", s.peak); }
+        sp(x, "meq_hi_gain", 0); sp(x, "mix_vol_1", 100);
+        sp(x, "kit_init", 1); sp(x, "kit_init", 0); sp(x, "voice", 0);
+    }
+
     E->destroy(y);
     E->destroy(x);
     printf(fails ? "FAILED: %d\n" : "PASSED\n", fails);
