@@ -210,6 +210,8 @@ typedef struct {
     unsigned nan_count;     /* the samples the master bus had to silence (not finite): the test watches this */
     float clip[EDIT_PARAMS];/* voice_copy's snapshot of the selected voice (session-only: never serialized) */
     int have_clip;          /* the clipboard holds a voice */
+    float meq[9];           /* the master EQ's knobs (PK_MASTER: P_MEQ_HI_FREQ..P_MEQ_LO_Q, design §3) */
+    PeakEQ meq_hs[2], meq_pk[2], meq_ls[2];  /* its three bands' per-channel states (design §4) */
 } Synth;
 
 void patch_init_voice(Voice *v);   /* INIT_PATCH (generated, p[] order) fills the voice */

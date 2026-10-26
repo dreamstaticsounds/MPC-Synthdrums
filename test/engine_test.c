@@ -1128,6 +1128,57 @@ CHECK(s.nan == 0 && s.peak <= 32767 && s.peak > 24000, "12-voice sum loud and un
         sp(x, "mix_vol_2", 100); sp(x, "voice", 0);
     }
 
+    /* ---- 1.1.0 Task 3: the master EQ params (design §3/§4) -- device-level, KIT INIT resets ---- */
+    {
+        static char st[8192], old[8192];
+        sp(x, "kit_init", 1); sp(x, "kit_init", 0);          /* self-prelude: fresh kit */
+        CHECK(P_MEQ_HI_FREQ == 121 && P_MEQ_LO_Q == 129, "master EQ param indices 121..129 (%d..%d)",
+              P_MEQ_HI_FREQ, P_MEQ_LO_Q);
+        CHECK(PDEF[P_MEQ_FREQ].kind == PK_MASTER, "meq_freq is PK_MASTER");
+        /* defaults: flat */
+        E->get_param(x, "meq_hi_gain", b, sizeof b); CHECK(!strcmp(b, "0"), "init meq_hi_gain (%s)", b);
+        E->get_param(x, "meq_freq", b, sizeof b);     CHECK(!strcmp(b, "64"), "init meq_freq (%s)", b);
+        E->get_param(x, "meq_lo_q", b, sizeof b);     CHECK(!strcmp(b, "64"), "init meq_lo_q (%s)", b);
+        /* write/read */
+        sp(x, "meq_hi_freq", 100); E->get_param(x, "meq_hi_freq", b, sizeof b);
+        CHECK(!strcmp(b, "100"), "meq_hi_freq readback (%s)", b);
+        sp(x, "meq_lo_gain", -40); E->get_param(x, "meq_lo_gain", b, sizeof b);
+        CHECK(!strcmp(b, "-40"), "meq_lo_gain readback (%s)", b);
+        /* Hz readouts: the voice EQ's mapping (40 Hz .. 12 kHz) */
+        sp(x, "meq_hi_freq", 0);   E->get_param(x, "meq_hi_freq_display", b, sizeof b);
+        CHECK(!strcmp(b, "40 Hz"), "master EQ display lo (%s)", b);
+        sp(x, "meq_lo_freq", 127); E->get_param(x, "meq_lo_freq_display", b, sizeof b);
+        CHECK(!strcmp(b, "12.0 kHz"), "master EQ display hi (%s)", b);
+        /* the chunk: a meq= line exists, round-trips; an absent line means defaults (flat) */
+        E->get_param(x, "state", st, sizeof st);
+        CHECK(strstr(st, "\nmeq=") != NULL, "state carries a meq= line");
+        CHECK(strlen(st) < 8000, "state length %d < 8000", (int)strlen(st));
+        {   void *z = E->create(NULL);
+            E->set_param(z, "state", st);
+            /* meq_hi_freq reads 0 here: the display test set it before the capture; 0 != the 64
+             * default, so it still proves the line carried the value */
+            E->get_param(z, "meq_hi_freq", b, sizeof b); CHECK(!strcmp(b, "0"), "meq round trip (%s)", b);
+            E->get_param(z, "meq_lo_gain", b, sizeof b); CHECK(!strcmp(b, "-40"), "meq round trip gain (%s)", b);
+            /* strip the line: a 1.0.3-shaped chunk loads flat (guarded: without the feature the
+             * line is absent and the CHECK above is the red -- here it must not deref NULL) */
+            { char *m = strstr(st, "meq="), *nl = m ? strchr(m, '\n') : NULL;
+              if (m && nl) {
+                  memcpy(old, st, (size_t)(m - st));
+                  strcpy(old + (m - st), nl + 1);
+                  E->set_param(z, "state", old);
+                  E->get_param(z, "meq_hi_freq", b, sizeof b);
+                  CHECK(!strcmp(b, "64"), "old chunk: meq_hi_freq default (%s)", b);
+                  E->get_param(z, "meq_lo_gain", b, sizeof b);
+                  CHECK(!strcmp(b, "0"), "old chunk: meq_lo_gain default (%s)", b); } }
+            E->destroy(z); }
+        /* KIT INIT resets the master EQ to flat (author's decision, 2026-10-25) */
+        sp(x, "meq_hi_gain", 30); sp(x, "meq_lo_freq", 12);
+        sp(x, "kit_init", 1); sp(x, "kit_init", 0);
+        E->get_param(x, "meq_hi_gain", b, sizeof b); CHECK(!strcmp(b, "0"), "KIT INIT resets meq_hi_gain (%s)", b);
+        E->get_param(x, "meq_lo_freq", b, sizeof b); CHECK(!strcmp(b, "64"), "KIT INIT resets meq_lo_freq (%s)", b);
+        sp(x, "voice", 0);
+    }
+
     E->destroy(y);
     E->destroy(x);
     printf(fails ? "FAILED: %d\n" : "PASSED\n", fails);

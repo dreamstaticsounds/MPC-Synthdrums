@@ -105,6 +105,11 @@ static char *serialize(const Synth *s, int *len)
     int i, k;
     if (!buf) return NULL;
     add(buf, STATE_CAP, &n, "MSDR 1\nsel=%d\nbase=%d\n", s->sel, s->base_note);
+    /* 1.1.0 (design §4): the device-level master EQ gets its own line; old parsers skip unknown
+     * lines, new parsers treat a missing line as the flat defaults (patch_init_kit already ran) */
+    add(buf, STATE_CAP, &n, "meq=%g,%g,%g,%g,%g,%g,%g,%g,%g\n",
+        (double)s->meq[0], (double)s->meq[1], (double)s->meq[2], (double)s->meq[3], (double)s->meq[4],
+        (double)s->meq[5], (double)s->meq[6], (double)s->meq[7], (double)s->meq[8]);
     for (i = 0; i < 12; i++) {
         add(buf, STATE_CAP, &n, "v%d=", i + 1);   /* 1-based line number, 0-based parameter values */
         for (k = 0; k < EDIT_PARAMS; k++) add(buf, STATE_CAP, &n, k ? ",%g" : "%g", (double)s->v[i].p[k]);
@@ -128,6 +133,20 @@ static void deserialize(Synth *s, const char *text)
         }
         if (!strncmp(p, "base=", 5)) {
             s->base_note = (int)clampf((float)atoi(p + 5), PDEF[P_BASE_NOTE].min, PDEF[P_BASE_NOTE].max);
+            continue;
+        }
+        if (!strncmp(p, "meq=", 4)) {   /* nine values, clamped like the voice lines; absent = flat */
+            const char *q = p + 4;
+            int k;
+            for (k = 0; k < 9; k++) {
+                char *end;
+                const double d = strtod(q, &end);
+                if (end == q) break;   /* short line: the rest stays at the init values */
+                s->meq[k] = clampf((float)d, PDEF[P_MEQ_HI_FREQ + k].min, PDEF[P_MEQ_HI_FREQ + k].max);
+                q = end;
+                if (*q != ',') break;
+                q++;
+            }
             continue;
         }
         if (p[0] == 'v' && p[1] >= '0' && p[1] <= '9') {
@@ -184,6 +203,9 @@ static void set_param(void *p, const char *k, const char *val)
                 s->v[k].p[P2E[is_pan ? P_OUT_PAN : P_OUT_VOL]] = f;
                 if (k == s->sel) s->rev++;   /* the wrapper's display_rev diff refreshes out_vol/out_pan */
             }
+            break;
+        case PK_MASTER:
+            s->meq[i - P_MEQ_HI_FREQ] = f;   /* the master EQ's nine device-level knobs (design §3) */
             break;
         case PK_UI:
             if (i == P_VOICE) {
@@ -275,9 +297,12 @@ static int get_param(void *p, const char *k, char *buf, int n)
             if (n2 >= (int)sizeof base) return 0;
             memcpy(base, k, (size_t)n2); base[n2] = 0;
             j = key_index(base);
-            if (j < 0 || PDEF[j].kind != PK_PATCH) return 0;
+            if (j < 0 || (PDEF[j].kind != PK_PATCH && PDEF[j].kind != PK_MASTER)) return 0;
             {
-                const float v = s->v[s->sel].p[P2E[j]];
+                /* the value's source follows the kind: PK_PATCH lives in the SELECTED voice's p[],
+                 * PK_MASTER in Synth.meq (P2E[j] is -1 for it -- never index p[] with it) */
+                const float v = PDEF[j].kind == PK_MASTER ? s->meq[j - P_MEQ_HI_FREQ]
+                                                           : s->v[s->sel].p[P2E[j]];
                 if (j == P_FILTER_CUTOFF) {
                     hz_str(30.0f * powf(16000.0f / 30.0f, v * (1.0f / 127.0f)), t, sizeof t);
                     return put(buf, n, t);
@@ -287,6 +312,11 @@ static int get_param(void *p, const char *k, char *buf, int n)
                     return put(buf, n, t);
                 }
                 if (j == P_EQ_FREQ || j == P_EQ2_FREQ || j == P_EQ3_FREQ) {
+                    hz_str(40.0f * powf(300.0f, v * (1.0f / 127.0f)), t, sizeof t);
+                    return put(buf, n, t);
+                }
+                if (j == P_MEQ_HI_FREQ || j == P_MEQ_FREQ || j == P_MEQ_LO_FREQ) {
+                    /* the master EQ's freqs: the same log sweep as the voice EQ (keep in sync) */
                     hz_str(40.0f * powf(300.0f, v * (1.0f / 127.0f)), t, sizeof t);
                     return put(buf, n, t);
                 }
@@ -357,6 +387,10 @@ static int get_param(void *p, const char *k, char *buf, int n)
         const int is_pan = i >= P_MIX_PAN_1;
         const int k = is_pan ? i - P_MIX_PAN_1 : i - P_MIX_VOL_1;
         snprintf(t, sizeof t, "%g", s->v[k].p[P2E[is_pan ? P_OUT_PAN : P_OUT_VOL]]);
+        return put(buf, n, t);
+    }
+    if (PDEF[i].kind == PK_MASTER) {   /* the master EQ's device-level knobs */
+        snprintf(t, sizeof t, "%g", s->meq[i - P_MEQ_HI_FREQ]);
         return put(buf, n, t);
     }
     if (PDEF[i].kind == PK_PATCH) {

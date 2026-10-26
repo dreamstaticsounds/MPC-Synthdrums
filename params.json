@@ -1303,6 +1303,81 @@
    "min": -64,
    "max": 63,
    "display": "int"
+  },
+  {
+   "key": "meq_hi_freq",
+   "name": "MASTER HIGH FREQ",
+   "default": 64,
+   "min": 0,
+   "max": 127,
+   "display": "int",
+   "dynamic_display": true
+  },
+  {
+   "key": "meq_hi_gain",
+   "name": "MASTER HIGH GAIN",
+   "default": 0,
+   "min": -63,
+   "max": 63,
+   "display": "int"
+  },
+  {
+   "key": "meq_hi_q",
+   "name": "MASTER HIGH Q",
+   "default": 64,
+   "min": 0,
+   "max": 127,
+   "display": "int"
+  },
+  {
+   "key": "meq_freq",
+   "name": "MASTER EQ FREQ",
+   "default": 64,
+   "min": 0,
+   "max": 127,
+   "display": "int",
+   "dynamic_display": true
+  },
+  {
+   "key": "meq_gain",
+   "name": "MASTER EQ GAIN",
+   "default": 0,
+   "min": -63,
+   "max": 63,
+   "display": "int"
+  },
+  {
+   "key": "meq_q",
+   "name": "MASTER EQ Q",
+   "default": 64,
+   "min": 0,
+   "max": 127,
+   "display": "int"
+  },
+  {
+   "key": "meq_lo_freq",
+   "name": "MASTER LOW FREQ",
+   "default": 64,
+   "min": 0,
+   "max": 127,
+   "display": "int",
+   "dynamic_display": true
+  },
+  {
+   "key": "meq_lo_gain",
+   "name": "MASTER LOW GAIN",
+   "default": 0,
+   "min": -63,
+   "max": 63,
+   "display": "int"
+  },
+  {
+   "key": "meq_lo_q",
+   "name": "MASTER LOW Q",
+   "default": 64,
+   "min": 0,
+   "max": 127,
+   "display": "int"
   }
  ]
 }
