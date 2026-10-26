@@ -54,6 +54,8 @@ typedef struct {
     float b0, b1, b2, a1, a2;   /* the RBJ coefficients, normalized (a0 = 1) */
 } PeakEQ;
 void eq_set(PeakEQ *e, float hz, float gain_db, float q);
+void eq_set_high_shelf(PeakEQ *e, float hz, float gain_db, float q);   /* the master EQ (1.1.0 §4) */
+void eq_set_low_shelf(PeakEQ *e, float hz, float gain_db, float q);
 float eq_step(PeakEQ *e, float x);
 
 /* The EQ's range: the "freq" knob's log sweep, 40 Hz .. 12 kHz. */

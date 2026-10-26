@@ -109,6 +109,50 @@ void eq_set(PeakEQ *e, float hz, float gain_db, float q)
     e->a2 = (1.0f - alpha / A) / a0;
 }
 
+/* RBJ's shelving filters (1.1.0 design §4, the master EQ): same guards, knobs (40 Hz..12 kHz,
+ * +-18 dB mapped by the caller, Q 0.5..6) and Direct Form I state as the bell above -- the recipe
+ * per shelf. With A = 1 (0 dB) numerator and denominator are the same, so 0 dB is exactly unity;
+ * render() never gets here at 0 anyway (the bypass rule skips the band before eq_step). */
+static void eq_set_shelf(PeakEQ *e, float hz, float gain_db, float q, int high)
+{
+    float A, w0, c, s, alpha, sq, a0, b0, b1, b2, a1, a2;
+
+    if (hz < EQ_MIN_HZ) hz = EQ_MIN_HZ;
+    else if (hz > EQ_MAX_HZ) hz = EQ_MAX_HZ;
+    if (q < 0.1f) q = 0.1f;
+
+    A = powf(10.0f, gain_db / 40.0f);   /* 1 = 0 dB; the shelf's plateau is A^2 */
+    w0 = TWO_PI * hz / SD_SR;
+    c = cosf(w0);
+    s = sinf(w0);
+    alpha = s / (2.0f * q);
+    sq = sqrtf(A);
+
+    if (high) {
+        b0 = A * ((A + 1.0f) + (A - 1.0f) * c + 2.0f * sq * alpha);
+        b1 = -2.0f * A * ((A - 1.0f) + (A + 1.0f) * c);
+        b2 = A * ((A + 1.0f) + (A - 1.0f) * c - 2.0f * sq * alpha);
+        a0 =         (A + 1.0f) - (A - 1.0f) * c + 2.0f * sq * alpha;
+        a1 = 2.0f * ((A - 1.0f) - (A + 1.0f) * c);
+        a2 =         (A + 1.0f) - (A - 1.0f) * c - 2.0f * sq * alpha;
+    } else {
+        b0 = A * ((A + 1.0f) - (A - 1.0f) * c + 2.0f * sq * alpha);
+        b1 = 2.0f * A * ((A - 1.0f) - (A + 1.0f) * c);
+        b2 = A * ((A + 1.0f) - (A - 1.0f) * c - 2.0f * sq * alpha);
+        a0 =         (A + 1.0f) + (A - 1.0f) * c + 2.0f * sq * alpha;
+        a1 = -2.0f * ((A - 1.0f) + (A + 1.0f) * c);
+        a2 =         (A + 1.0f) + (A - 1.0f) * c - 2.0f * sq * alpha;
+    }
+    e->b0 = b0 / a0;
+    e->b1 = b1 / a0;
+    e->b2 = b2 / a0;
+    e->a1 = a1 / a0;
+    e->a2 = a2 / a0;
+}
+
+void eq_set_high_shelf(PeakEQ *e, float hz, float gain_db, float q) { eq_set_shelf(e, hz, gain_db, q, 1); }
+void eq_set_low_shelf(PeakEQ *e, float hz, float gain_db, float q) { eq_set_shelf(e, hz, gain_db, q, 0); }
+
 float eq_step(PeakEQ *e, float x)
 {
     /* Direct Form I: the state is the input's and the output's last two samples. */

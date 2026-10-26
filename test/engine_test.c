@@ -169,6 +169,27 @@ static double capdiff(const float *a, const float *b, int n)
     return n ? sqrt(acc / (double)n) : 0.0;
 }
 
+/* 1.1.0 Task 4: a master EQ band's response -- out-RMS / in-RMS of a 0.5-amplitude sine (its exact
+ * RMS 0.353553) through a fresh band at a 700 Hz corner, +12 dB, q 2, measured over samples
+ * 2048..4095 of 4096 (the corner's time constants are well under a millisecond).
+ * which: 0 = low shelf, 1 = high shelf, 2 = the parametric bell. */
+static double probe(int which, double freq_hz)
+{
+    PeakEQ e;
+    double acc = 0.0;
+    int n, cnt = 0;
+    memset(&e, 0, sizeof e);
+    if (which == 0) eq_set_low_shelf(&e, 700.0f, 12.0f, 2.0f);
+    else if (which == 1) eq_set_high_shelf(&e, 700.0f, 12.0f, 2.0f);
+    else eq_set(&e, 700.0f, 12.0f, 2.0f);
+    for (n = 0; n < 4096; n++) {
+        const float x = (float)(0.5 * sin(6.283185307179586 * freq_hz * n / 44100.0));
+        const float y = eq_step(&e, x);
+        if (n >= 2048) { acc += (double)y * y; cnt++; }
+    }
+    return sqrt(acc / (double)cnt) / 0.353553;
+}
+
 /* the mono fold of the next nblocks blocks (0..1): windows longer than cap's single block (Task 5) */
 static void cap_long(void *x, float *out, int nblocks)
 {
@@ -1177,6 +1198,42 @@ CHECK(s.nan == 0 && s.peak <= 32767 && s.peak > 24000, "12-voice sum loud and un
         E->get_param(x, "meq_hi_gain", b, sizeof b); CHECK(!strcmp(b, "0"), "KIT INIT resets meq_hi_gain (%s)", b);
         E->get_param(x, "meq_lo_freq", b, sizeof b); CHECK(!strcmp(b, "64"), "KIT INIT resets meq_lo_freq (%s)", b);
         sp(x, "voice", 0);
+    }
+
+    /* ---- 1.1.0 Task 4: the master EQ DSP (design §4) ---- */
+    {
+        static float A[128], B[128];
+        /* direct unit probes: a 700 Hz corner, +12 dB, q 2 -- direction and size per band */
+        double r;
+        r = probe(1, 10000); CHECK(r > 3.55 && r < 4.45, "high shelf +12 dB at 10 kHz (%.2fx)", r);
+        r = probe(1, 100);   CHECK(r > 0.90 && r < 1.10, "high shelf leaves 100 Hz (%.2fx)", r);
+        r = probe(0, 50);    CHECK(r > 3.55 && r < 4.45, "low shelf +12 dB at 50 Hz (%.2fx)", r);
+        r = probe(0, 10000); CHECK(r > 0.90 && r < 1.10, "low shelf leaves 10 kHz (%.2fx)", r);
+        r = probe(2, 700);   CHECK(r > 3.55 && r < 4.45, "parametric +12 dB at 700 Hz (%.2fx)", r);
+        r = probe(2, 50);    CHECK(r > 0.90 && r < 1.10, "parametric leaves 50 Hz (%.2fx)", r);
+        /* flat: gain 0 bypasses bit-exactly whatever freq/Q says (the bypass rule) */
+        sp(x, "kit_init", 1); sp(x, "kit_init", 0);
+        note(x, 36, 127); cap(x, A, 128);
+        sp(x, "meq_hi_freq", 10); sp(x, "meq_hi_q", 120);
+        sp(x, "meq_freq", 0);     sp(x, "meq_q", 5);
+        sp(x, "meq_lo_freq", 120); sp(x, "meq_lo_q", 120);
+        note(x, 36, 127); cap(x, B, 128);
+        CHECK(capdiff(A, B, 128) < 1e-9, "flat master EQ bypasses bit-exactly (%.9f)", capdiff(A, B, 128));
+        /* engaged: each band moves the audio */
+        sp(x, "meq_hi_gain", 63);  note(x, 36, 127); cap(x, B, 128);
+        CHECK(capdiff(A, B, 128) > 1e-3, "high shelf engages");
+        sp(x, "meq_hi_gain", 0); sp(x, "meq_lo_gain", -63); note(x, 36, 127); cap(x, B, 128);
+        CHECK(capdiff(A, B, 128) > 1e-3, "low shelf cut engages");
+        sp(x, "meq_lo_gain", 0); sp(x, "meq_gain", 63); note(x, 36, 127); cap(x, B, 128);
+        CHECK(capdiff(A, B, 128) > 1e-3, "parametric band engages");
+        sp(x, "meq_gain", 0);
+        /* stress: every knob at its extreme, 300 blocks, no NaN */
+        sp(x, "meq_hi_freq", 127); sp(x, "meq_hi_gain", 63); sp(x, "meq_hi_q", 127);
+        sp(x, "meq_freq", 0);      sp(x, "meq_gain", -63);   sp(x, "meq_q", 127);
+        sp(x, "meq_lo_freq", 0);   sp(x, "meq_lo_gain", 63); sp(x, "meq_lo_q", 127);
+        note(x, 36, 127);
+        { Stat s = run(x, 300); CHECK(s.nan == 0, "master EQ stress: no NaN (nan %d)", s.nan); }
+        sp(x, "kit_init", 1); sp(x, "kit_init", 0); sp(x, "voice", 0);
     }
 
     E->destroy(y);

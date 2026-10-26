@@ -451,20 +451,54 @@ static void render(void *p, int16_t *out, int frames)
         if (!v->sounding) continue;   /* the one-shot is over: the voice costs nothing */
         sd_voice_render(v, acc, frames, s->bpm);
     }
-    for (i = 0; i < frames; i++) {
-        float xl = acc[2 * i] * MASTER_GAIN;
-        float xr = acc[2 * i + 1] * MASTER_GAIN;
-        int16_t yl, yr;
-        if (!isfinite(xl)) { xl = 0.0f; s->nan_count++; }   /* a NaN would be undefined behaviour here */
-        if (!isfinite(xr)) { xr = 0.0f; s->nan_count++; }
-        xl = xl / (1.0f + fabsf(xl));                        /* the master soft clip */
-        xr = xr / (1.0f + fabsf(xr));
-        if (xl > 1.0f) xl = 1.0f; else if (xl < -1.0f) xl = -1.0f;
-        if (xr > 1.0f) xr = 1.0f; else if (xr < -1.0f) xr = -1.0f;
-        yl = (int16_t)lrintf(xl * 32767.0f);
-        yr = (int16_t)lrintf(xr * 32767.0f);
-        out[2 * i] = yl;
-        out[2 * i + 1] = yr;
+    /* The master EQ (1.1.0 design §4): three bands on the summed bus, coefficients once per block
+     * (mirroring voice.c's per-block eq_set), per channel, each band skipped ENTIRELY at gain 0
+     * (exact bypass -- never stepped with a neutral coefficient, so flat output ≡ 1.0.3). The
+     * knob->value expressions mirror voice.c's eq_hz/eq_db/eq_q -- keep in sync. */
+    {
+        const float gh = s->meq[P_MEQ_HI_GAIN - P_MEQ_HI_FREQ];
+        const float gm = s->meq[P_MEQ_GAIN - P_MEQ_HI_FREQ];
+        const float gl = s->meq[P_MEQ_LO_GAIN - P_MEQ_HI_FREQ];
+        if (gh != 0.0f || gm != 0.0f || gl != 0.0f) {
+            const float kf[3] = { s->meq[0], s->meq[3], s->meq[6] };   /* freqs: offsets 0/3/6 */
+            const float kq[3] = { s->meq[2], s->meq[5], s->meq[8] };   /* qs:    offsets 2/5/8 */
+            const float kg[3] = { gh, gm, gl };
+            for (n = 0; n < 3; n++) {
+                float hz, db, qq;
+                if (kg[n] == 0.0f) continue;
+                hz = 40.0f * powf(300.0f, kf[n] * (1.0f / 127.0f));
+                db = kg[n] * (18.0f / 63.0f);
+                qq = 0.5f * powf(12.0f, kq[n] * (1.0f / 127.0f));
+                if (n == 0) {
+                    eq_set_high_shelf(&s->meq_hs[0], hz, db, qq);
+                    eq_set_high_shelf(&s->meq_hs[1], hz, db, qq);
+                } else if (n == 1) {
+                    eq_set(&s->meq_pk[0], hz, db, qq);
+                    eq_set(&s->meq_pk[1], hz, db, qq);
+                } else {
+                    eq_set_low_shelf(&s->meq_ls[0], hz, db, qq);
+                    eq_set_low_shelf(&s->meq_ls[1], hz, db, qq);
+                }
+            }
+        }
+        for (i = 0; i < frames; i++) {
+            float xl = acc[2 * i] * MASTER_GAIN;
+            float xr = acc[2 * i + 1] * MASTER_GAIN;
+            int16_t yl, yr;
+            if (gh != 0.0f) { xl = eq_step(&s->meq_hs[0], xl); xr = eq_step(&s->meq_hs[1], xr); }
+            if (gm != 0.0f) { xl = eq_step(&s->meq_pk[0], xl); xr = eq_step(&s->meq_pk[1], xr); }
+            if (gl != 0.0f) { xl = eq_step(&s->meq_ls[0], xl); xr = eq_step(&s->meq_ls[1], xr); }
+            if (!isfinite(xl)) { xl = 0.0f; s->nan_count++; }   /* a NaN would be undefined behaviour here */
+            if (!isfinite(xr)) { xr = 0.0f; s->nan_count++; }
+            xl = xl / (1.0f + fabsf(xl));                        /* the master soft clip */
+            xr = xr / (1.0f + fabsf(xr));
+            if (xl > 1.0f) xl = 1.0f; else if (xl < -1.0f) xl = -1.0f;
+            if (xr > 1.0f) xr = 1.0f; else if (xr < -1.0f) xr = -1.0f;
+            yl = (int16_t)lrintf(xl * 32767.0f);
+            yr = (int16_t)lrintf(xr * 32767.0f);
+            out[2 * i] = yl;
+            out[2 * i + 1] = yr;
+        }
     }
     fz_off(fpu);
 }
