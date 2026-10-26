@@ -2,7 +2,7 @@
   "name": "MPC Synthdrums",
   "vendor": "Dream Static Sounds",
   "uid": "MSdr",
-  "version": 1003,
+  "version": 1100,
   "so": "synthdrums.so",
   "params": "params.json",
   "layout": "layout.conf",

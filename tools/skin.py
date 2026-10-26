@@ -421,7 +421,7 @@ def glb_page():
     text(pg, (697, 590), "SILENCES ITS GROUP", 15, INK_DIM)
     panel(pg, (1006, 269, 258, 343), "ABOUT")
     about = ["MPC SYNTHDRUMS", "12-VOICE SYNTH DRUM BOX", "DREAM STATIC SOUNDS",
-             "INSPIRED BY DSK SYNTHDRUMS", "NOT AFFILIATED WITH DSK MUSIC", "VERSION 1.0.3"]
+             "INSPIRED BY DSK SYNTHDRUMS", "NOT AFFILIATED WITH DSK MUSIC", "VERSION 1.1.0"]
     for i, line in enumerate(about):
         fit_text(pg, (1022, 355 + 34 * i, 226, 26), line, 16 if i == 0 else 15, INK if i == 0 else INK_DIM)
     return pg
