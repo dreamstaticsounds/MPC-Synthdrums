@@ -18,16 +18,16 @@ All commands run from the repo root. Re-run on 2026-10-25 for the 1.1.0 release.
 
 | Check | Command | Result | Date | Task |
 |---|---|---|---|---|
-| Unit suite (engine, ASan/UBSan) | `test/run_tests.sh` | **PASSED**, exit 0 — 281 executed checks, no sanitizer report (the suite prints only `PASSED`; 281 measured with an instrumented throwaway copy of `test/engine_test.c`) | 2026-10-25 | 2–8 |
+| Unit suite (engine, ASan/UBSan) | `test/run_tests.sh` | **PASSED**, exit 0 — 282 executed checks, no sanitizer report (the suite prints only `PASSED`; 282 measured with an instrumented throwaway copy of `test/engine_test.c`) | 2026-10-25 | 2–8 |
 | Golden verify (inside the unit suite) | `test/golden_test test/goldens/fx-sound.txt` | **PASSED** — all three FNV hashes match the fixture captured at `972c519`; the flat master EQ (bypass at gain 0) keeps the hashed stream bit-identical to 1.0.3 | 2026-10-25 | 4 |
 | Host test (framework VST2 host) | `test/host_test.sh` | **PASSED**, exit 0 — 77/77 `ok`; state chunk 2624 B (was 2596 B — the `meq=` line adds 26 B; < 8000 guard is in the unit suite); the popup's `__open` flag is **not** saved in the chunk; `fx_reset` is absent from the chunk; two-thread screen/audio check included | 2026-10-25 | 2, 3 |
 | Skin check | the `skin_check.py` gate inside `build.sh` (same filter as 1.0.3: only `TOUCH` lines naming popup rows exempt) | exit 0, **no hard findings**; by-design popup `TOUCH` lines unchanged; built skin: **7 pages, 317 definitions, 370 pictures** | 2026-10-25 | 6, 7 |
 | Picker fields | `python3 tools/field_check.py "build/skin/Dream Static Sounds - VST - MPC Synthdrums"` | **0 failures** — nine `sdField_` defs (LFO pickers, unchanged by 1.1.0) | 2026-10-25 | 6 |
 | Param/layout checks | `python3 tools/gen_params.py --check && python3 tools/skin.py --check` | exit 0, **silent** — 130 parameters + 9 hidden `__open` popup params (params.h: **139**); layout matches `layout.conf` (7 tabs incl. `[tab MASTER]`) | 2026-10-25 | 2, 3, 6, 7 |
-| armhf build gates | `nm -D build/arm/synthdrums.so \| awk '$2=="T"'`; `readelf -V` max GLIBC; `file`; `version.xml` | **1** exported `T` symbol (`VSTPluginMain`); **max GLIBC = 2.27** (≤ 2.31); ELF 32-bit LSB ARM EABI5, **80 800 B** (was 72 172 B); `version.xml` **1.1.0.0** | 2026-10-25 | 1, 9 |
+| armhf build gates | `nm -D build/arm/synthdrums.so \| awk '$2=="T"'`; `readelf -V` max GLIBC; `file`; `version.xml` | **1** exported `T` symbol (`VSTPluginMain`); **max GLIBC = 2.27** (≤ 2.31); ELF 32-bit LSB ARM EABI5, **80 720 B** (was 72 172 B); `version.xml` **1.1.0.0** | 2026-10-25 | 1, 9 |
 | aarch64 build gates | same three on `build/arm64/synthdrums.so` | **1** exported `T` symbol; **max GLIBC = 2.27**; ELF 64-bit LSB ARM aarch64, **104 600 B** (was 92 312 B); `version.xml` **1.1.0.0** | 2026-10-25 | 9 |
 | aarch64 engine test under qemu | `test/arm_sim.sh` | **PASSED**, exit 0 — same green suite as x86 (binfmt had to be re-registered first: `docker run --privileged --rm tonistiigi/binfmt --install arm64` — it does not survive docker/host restarts) | 2026-10-25 | 9 |
-| CPU bench, x86 (relative only) | `bash third_party/mpc-vst-plugins/tools/bench.sh build/host/synthdrums.so local -j` and `… -w -j`, against a `6ba97b4` (1.0.3) baseline worktree cut the same way | Default: **PASS**, worst p99 **5.8 %**, worst block **33.7 %** (baseline 4.9 / 33.8 — the flat master EQ is free, as promised). Worst case (`-w`): p99 **28.4–29.7 %** (baseline **30.0 %**, ≤ ~2× criterion met at 0.99×), worst block **91.1–100.9 %** across runs (baseline **96.5 %** — single-block jitter straddling baseline; the master EQ's gains are not in the `-w` preset, so it bypasses). The bench's own absolute bands (PASS ≤15/≤50) fail **both** builds on `-w`, exactly as in 1.0.3; the device number is the official gate. | 2026-10-25 | 9 |
+| CPU bench, x86 (relative only) | `bash third_party/mpc-vst-plugins/tools/bench.sh build/host/synthdrums.so local -j` and `… -w -j`, against a `6ba97b4` (1.0.3) baseline worktree cut the same way | Default: **PASS**, worst p99 **5.8–6.3 %**, worst block **33.6–33.7 %** across runs (baseline 4.9 / 33.8 — the flat master EQ is free, as promised). Worst case (`-w`, final-binary run last): p99 **28.4–29.7 %** (final binary **28.8 %**; baseline **30.0 %** — ≤ ~2× criterion met at ~0.96×), worst block **91.1–100.9 %** across runs (final binary **92.7 %**; baseline **96.5 %** — single-block jitter straddling baseline; the master EQ's gains are not in the `-w` preset, so it bypasses). The bench's own absolute bands (PASS ≤15/≤50) fail **both** builds on `-w`, exactly as in 1.0.3; the device number is the official gate. | 2026-10-25 | 9 |
 
 `tools/skin_post.py` (wired via `vst.json "skin_post"`) stamps the skin's `version.xml` with the release version.
 
@@ -75,7 +75,7 @@ dist/MPC-Synthdrums-1.1.0-mpc-aarch64.zip    # Gen2 (MPC Live/One/X/Key 3, MPC 5
 ```
 
 The zips were cut on 2026-10-25 (both verified: `unzip -t` clean, 386 files, 5.6 MB each; armv7 carries the ELF
-32-bit EABI5 `.so` 80 800 B, aarch64 the ELF 64-bit `.so` 104 600 B; `version.xml` **1.1.0.0**). Re-cut on request
+32-bit EABI5 `.so` 80 720 B, aarch64 the ELF 64-bit `.so` 104 600 B; `version.xml` **1.1.0.0**). Re-cut on request
 with `release.py` (the armv7 run uses `build/arm/synthdrums.so`, the aarch64 run `build/arm64/synthdrums.so`,
 everything else identical):
 
@@ -129,6 +129,6 @@ a later release's `INSTALL.md`. The device is pinned to core 1 by `bench.sh`, so
 * `display_rev` moves the MPC screen to the new voice's values after a pad hit, and a mixer move on the selected
   voice bumps it (the wrapper then automates the old VOL/PAN readbacks);
 * bench p99 ≤ 15 % / worst block ≤ 50 % is PASS (verdict table in `third_party/mpc-vst-plugins/docs/BENCH.md`); the
-  x86 numbers for 1.1.0 are p99 **5.8 %** / worst **33.7 %** (defaults) and p99 **28.4–29.7 %** / worst
-  **91.1–100.9 %** (`-w`), against the 6ba97b4 baseline's 4.9 / 33.8 and 30.0 / 96.5. The device numbers are the
-  release gate.
+  x86 numbers for 1.1.0 are p99 **5.8–6.3 %** / worst **33.6–33.7 %** (defaults) and p99 **28.4–29.7 %** / worst
+  **91.1–100.9 %** (`-w`; final-binary run 28.8 / 92.7), against the 6ba97b4 baseline's 4.9 / 33.8 and 30.0 /
+  96.5. The device numbers are the release gate.

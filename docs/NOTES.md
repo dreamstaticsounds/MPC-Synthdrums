@@ -139,3 +139,10 @@ Each release appends a section. Newest last.
   block jitter; the EQ's gains are not in the preset). Binaries: armhf 80 800 B, aarch64 104 600 B, max GLIBC
   2.27, one exported `T` each. The aarch64 path needed binfmt re-registered
   (`docker run --privileged --rm tonistiigi/binfmt --install arm64`) — it does not survive restarts.
+- **Final-review fix (parked EQ state)**: an off band's `PeakEQ` pair is now zeroed every block while its
+  gain is 0 (render is the sole writer), so re-engaging a master EQ band never steps stale history out as a
+  click (the reviewer's finding; test: load the band with signal, bypass, silence the bus, re-engage →
+  output exactly 0; RED peaked at 22750). Flat output is untouched (goldens stayed green) and the added
+  cost is three tiny memsets per block. Final-binary numbers: armhf **80 720 B** (the restructure shed
+  80 B), aarch64 104 600 B; engine suite **282** checks; x86 bench defaults p99 **6.3 %** / worst
+  **33.6 %**, `-w` **28.8 %** / **92.7 %** (baseline 4.9/33.8 and 30.0/96.5 — criterion holds).
