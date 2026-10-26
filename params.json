@@ -1111,6 +1111,198 @@
    "min": 0,
    "max": 127,
    "display": "int"
+  },
+  {
+   "key": "mix_vol_1",
+   "name": "VOL 1",
+   "default": 100,
+   "min": 0,
+   "max": 127,
+   "display": "int"
+  },
+  {
+   "key": "mix_vol_2",
+   "name": "VOL 2",
+   "default": 100,
+   "min": 0,
+   "max": 127,
+   "display": "int"
+  },
+  {
+   "key": "mix_vol_3",
+   "name": "VOL 3",
+   "default": 100,
+   "min": 0,
+   "max": 127,
+   "display": "int"
+  },
+  {
+   "key": "mix_vol_4",
+   "name": "VOL 4",
+   "default": 100,
+   "min": 0,
+   "max": 127,
+   "display": "int"
+  },
+  {
+   "key": "mix_vol_5",
+   "name": "VOL 5",
+   "default": 100,
+   "min": 0,
+   "max": 127,
+   "display": "int"
+  },
+  {
+   "key": "mix_vol_6",
+   "name": "VOL 6",
+   "default": 100,
+   "min": 0,
+   "max": 127,
+   "display": "int"
+  },
+  {
+   "key": "mix_vol_7",
+   "name": "VOL 7",
+   "default": 100,
+   "min": 0,
+   "max": 127,
+   "display": "int"
+  },
+  {
+   "key": "mix_vol_8",
+   "name": "VOL 8",
+   "default": 100,
+   "min": 0,
+   "max": 127,
+   "display": "int"
+  },
+  {
+   "key": "mix_vol_9",
+   "name": "VOL 9",
+   "default": 100,
+   "min": 0,
+   "max": 127,
+   "display": "int"
+  },
+  {
+   "key": "mix_vol_10",
+   "name": "VOL 10",
+   "default": 100,
+   "min": 0,
+   "max": 127,
+   "display": "int"
+  },
+  {
+   "key": "mix_vol_11",
+   "name": "VOL 11",
+   "default": 100,
+   "min": 0,
+   "max": 127,
+   "display": "int"
+  },
+  {
+   "key": "mix_vol_12",
+   "name": "VOL 12",
+   "default": 100,
+   "min": 0,
+   "max": 127,
+   "display": "int"
+  },
+  {
+   "key": "mix_pan_1",
+   "name": "PAN 1",
+   "default": 0,
+   "min": -64,
+   "max": 63,
+   "display": "int"
+  },
+  {
+   "key": "mix_pan_2",
+   "name": "PAN 2",
+   "default": 0,
+   "min": -64,
+   "max": 63,
+   "display": "int"
+  },
+  {
+   "key": "mix_pan_3",
+   "name": "PAN 3",
+   "default": 0,
+   "min": -64,
+   "max": 63,
+   "display": "int"
+  },
+  {
+   "key": "mix_pan_4",
+   "name": "PAN 4",
+   "default": 0,
+   "min": -64,
+   "max": 63,
+   "display": "int"
+  },
+  {
+   "key": "mix_pan_5",
+   "name": "PAN 5",
+   "default": 0,
+   "min": -64,
+   "max": 63,
+   "display": "int"
+  },
+  {
+   "key": "mix_pan_6",
+   "name": "PAN 6",
+   "default": 0,
+   "min": -64,
+   "max": 63,
+   "display": "int"
+  },
+  {
+   "key": "mix_pan_7",
+   "name": "PAN 7",
+   "default": 0,
+   "min": -64,
+   "max": 63,
+   "display": "int"
+  },
+  {
+   "key": "mix_pan_8",
+   "name": "PAN 8",
+   "default": 0,
+   "min": -64,
+   "max": 63,
+   "display": "int"
+  },
+  {
+   "key": "mix_pan_9",
+   "name": "PAN 9",
+   "default": 0,
+   "min": -64,
+   "max": 63,
+   "display": "int"
+  },
+  {
+   "key": "mix_pan_10",
+   "name": "PAN 10",
+   "default": 0,
+   "min": -64,
+   "max": 63,
+   "display": "int"
+  },
+  {
+   "key": "mix_pan_11",
+   "name": "PAN 11",
+   "default": 0,
+   "min": -64,
+   "max": 63,
+   "display": "int"
+  },
+  {
+   "key": "mix_pan_12",
+   "name": "PAN 12",
+   "default": 0,
+   "min": -64,
+   "max": 63,
+   "display": "int"
   }
  ]
 }

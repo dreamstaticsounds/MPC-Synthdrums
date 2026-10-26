@@ -175,6 +175,16 @@ static void set_param(void *p, const char *k, const char *val)
         case PK_PATCH:
             s->v[s->sel].p[P2E[i]] = f;
             break;
+        case PK_MIX:
+            {   /* the mixer (1.1.0 design §3): an alias, not a copy -- mix_vol_k/mix_pan_k write
+                 * voice k's own p[] slot, so the fader, an old out_vol/out_pan edit, KIT INIT,
+                 * COPY/PASTE and the chunk are one single source of truth */
+                const int is_pan = i >= P_MIX_PAN_1;
+                const int k = is_pan ? i - P_MIX_PAN_1 : i - P_MIX_VOL_1;
+                s->v[k].p[P2E[is_pan ? P_OUT_PAN : P_OUT_VOL]] = f;
+                if (k == s->sel) s->rev++;   /* the wrapper's display_rev diff refreshes out_vol/out_pan */
+            }
+            break;
         case PK_UI:
             if (i == P_VOICE) {
                 const int idx = (int)(f + 0.5f);   /* an option's index, 0-based */
@@ -341,6 +351,12 @@ static int get_param(void *p, const char *k, char *buf, int n)
     }
     if (i == P_BASE_NOTE) {
         snprintf(t, sizeof t, "%g", (float)s->base_note);
+        return put(buf, n, t);
+    }
+    if (PDEF[i].kind == PK_MIX) {   /* read back the same aliased slot the mixer wrote (design §3) */
+        const int is_pan = i >= P_MIX_PAN_1;
+        const int k = is_pan ? i - P_MIX_PAN_1 : i - P_MIX_VOL_1;
+        snprintf(t, sizeof t, "%g", s->v[k].p[P2E[is_pan ? P_OUT_PAN : P_OUT_VOL]]);
         return put(buf, n, t);
     }
     if (PDEF[i].kind == PK_PATCH) {

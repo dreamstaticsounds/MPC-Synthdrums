@@ -1083,6 +1083,51 @@ CHECK(s.nan == 0 && s.peak <= 32767 && s.peak > 24000, "12-voice sum loud and un
         sp(x, "comb", 0); sp(x, "comb_mix", 127);
     }
 
+    /* ---- 1.1.0 Task 2: the mixer params (design §3) -- 24 aliases of each voice's out stage ---- */
+    {
+        char c2[64];
+        sp(x, "kit_init", 1); sp(x, "kit_init", 0);          /* self-prelude: fresh kit */
+        /* appended, not inserted: the mixer lands right after comb_mix (index 96) */
+        CHECK(P_MIX_VOL_1 == 97 && P_MIX_PAN_1 == 109 && P_MIX_PAN_12 == 120,
+              "mixer param indices 97..120 (%d..%d)", P_MIX_VOL_1, P_MIX_PAN_12);
+        CHECK(PDEF[P_MIX_VOL_1].kind == PK_MIX && PDEF[P_MIX_VOL_1].nopts == 0, "mix_vol_1 is PK_MIX");
+        CHECK(PDEF[P_MIX_VOL_1].min == 0 && PDEF[P_MIX_VOL_1].max == 127, "mix_vol_1 range 0..127");
+        CHECK(PDEF[P_MIX_PAN_1].min == -64 && PDEF[P_MIX_PAN_1].max == 63, "mix_pan_1 range -64..63");
+        /* the append-only guards: p[] and the DEST list must not move */
+        CHECK(EDIT_PARAMS == 86, "EDIT_PARAMS stays 86 (%d)", EDIT_PARAMS);
+        CHECK(N_LFO1_DEST == 65, "N_LFO1_DEST stays 65 (%d)", N_LFO1_DEST);
+        CHECK(!strcmp(DEST_KEYS[N_LFO1_DEST - 1], "comb_mix"), "DEST tail unchanged (%s)",
+              DEST_KEYS[N_LFO1_DEST - 1]);
+        /* defaults read back through their own indices */
+        E->get_param(x, "mix_vol_1", b, sizeof b);  CHECK(!strcmp(b, "100"), "init mix_vol_1 (%s)", b);
+        E->get_param(x, "mix_pan_12", b, sizeof b); CHECK(!strcmp(b, "0"), "init mix_pan_12 (%s)", b);
+        /* write through the mixer, read back through the mixer (clamped by PDEF) */
+        sp(x, "mix_vol_3", 55);  E->get_param(x, "mix_vol_3", b, sizeof b); CHECK(!strcmp(b, "55"), "mix_vol_3 readback (%s)", b);
+        sp(x, "mix_pan_7", -30); E->get_param(x, "mix_pan_7", b, sizeof b); CHECK(!strcmp(b, "-30"), "mix_pan_7 readback (%s)", b);
+        sp(x, "mix_vol_1", 999);   E->get_param(x, "mix_vol_1", b, sizeof b); CHECK(!strcmp(b, "127"), "mix_vol_1 clamps (%s)", b);
+        sp(x, "mix_pan_1", -200);  E->get_param(x, "mix_pan_1", b, sizeof b); CHECK(!strcmp(b, "-64"), "mix_pan_1 clamps (%s)", b);
+        /* the alias: voice 3 (index 2) sees the fader's 55 as its own out_vol, voice 7 (index 6) its pan */
+        sp(x, "voice", 2); E->get_param(x, "out_vol", b, sizeof b);
+        CHECK(!strcmp(b, "55"), "mix_vol_3 -> voice 3 out_vol (%s)", b);
+        sp(x, "voice", 6); E->get_param(x, "out_pan", b, sizeof b);
+        CHECK(!strcmp(b, "-30"), "mix_pan_7 -> voice 7 out_pan (%s)", b);
+        /* the old direction lands on the selected voice and shows on its fader */
+        sp(x, "voice", 7); sp(x, "out_vol", 88);
+        E->get_param(x, "mix_vol_8", c2, sizeof c2); CHECK(!strcmp(c2, "88"), "out_vol shows on mix_vol_8 (%s)", c2);
+        /* a mixer write to the SELECTED voice bumps display_rev (the wrapper refreshes out_vol/out_pan) */
+        E->get_param(x, "display_rev", c2, sizeof c2);
+        sp(x, "mix_vol_8", 60);
+        E->get_param(x, "display_rev", b, sizeof b);
+        CHECK(atoi(b) == atoi(c2) + 1, "selected-voice mixer write bumps display_rev (%s -> %s)", c2, b);
+        /* the fader really scales the audio: voice 2 (index 1, note 37) silent at 0, audible at 100 */
+        sp(x, "voice", 0); sp(x, "mix_vol_2", 0);
+        note(x, 37, 127); CHECK(run(x, 4).peak == 0, "mix_vol_2 = 0 silences voice 2");
+        sp(x, "mix_vol_2", 100);
+        note(x, 37, 127); CHECK(run(x, 4).peak > 0, "mix_vol_2 = 100 sounds voice 2");
+        sp(x, "mix_vol_1", 100); sp(x, "mix_pan_1", 0); sp(x, "mix_vol_8", 100);
+        sp(x, "mix_vol_2", 100); sp(x, "voice", 0);
+    }
+
     E->destroy(y);
     E->destroy(x);
     printf(fails ? "FAILED: %d\n" : "PASSED\n", fails);
