@@ -7,6 +7,8 @@ MPC and Force are trademarks of Akai Professional (inMusic Brands).
 Version **1.1.0** — 7 skin pages (FILTER, FX, LFO, MASTER, CTRL, KIT, ABOUT), per-voice FX,
 tempo-synced delay/stutter, gated verb, master EQ + 12-voice mixer.
 
+You can download the zipped binaries on my Patreon here: https://www.patreon.com/dreamstatic/posts/free-to-all-mpc-173736425
+
 ## Requirements
 
 - Python 3 with `Pillow` and `numpy`
