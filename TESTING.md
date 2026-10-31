@@ -86,7 +86,7 @@ python3 third_party/mpc-vst-plugins/tools/release.py \
   --entry build/pluginlist-entry.xml \
   --version 1.1.0 \
   --about "12-voice synth drum box for MPC OS (inspired by DSK SynthDrums; not affiliated with DSK Music)." \
-  --license GPL-3.0-or-later \
+  --license MIT \
   -o dist
 ```
 
